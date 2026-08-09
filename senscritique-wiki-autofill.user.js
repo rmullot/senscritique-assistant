@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         SensCritique Wiki Autofill
 // @namespace    senscritique-wiki-assistant
-// @version      2.0
+// @version      1.0
 // @description  Panneau flottant multi-types (thème clair/sombre) pour pré-remplir les fiches wiki SensCritique
+// @downloadURL  https://github.com/rmullot/senscritique-assistant/blob/main/senscritique-wiki-autofill.user.js
+// @updateURL    https://github.com/rmullot/senscritique-assistant/blob/main/senscritique-wiki-autofill.user.js
 // @match        https://*.senscritique.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      store.steampowered.com
