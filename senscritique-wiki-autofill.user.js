@@ -14,6 +14,53 @@
 // @connect      image.tmdb.org
 // ==/UserScript==
 
+// -------------------------------------------------------------------
+// CONFORMITÉ TMDB (https://www.themoviedb.org/api-terms-of-use) :
+// - Ce script est un outil personnel gratuit et non commercial. Aucune
+//   monétisation, revente ou usage commercial n'est fait des données/
+//   images TMDB (une clé d'API commerciale est requise pour cela et
+//   n'est pas utilisée ici).
+// - L'attribution TMDB obligatoire (texte exact exigé + logo officiel
+//   non modifié, moins proéminent que la marque de ce script) est
+//   affichée en permanence dans le panneau (footer #sc-footer), jamais
+//   masquée dans un sous-menu.
+// - Aucun contenu TMDB n'est mis en cache au-delà de la session en
+//   cours : seule la clé d'API saisie par l'utilisateur est mémorisée
+//   (localStorage), jamais les données/images renvoyées par l'API.
+//
+// STEAM — deux APIs distinctes existent chez Valve :
+// - La Steam Web API officielle (documentée, clé signée, conditions
+//   publiées sur steamcommunity.com/dev/apiterms) N'EST PAS celle
+//   utilisée ici.
+// - Ce script utilise la "Storefront API" (store.steampowered.com/api/
+//   storesearch, /api/appdetails) : l'API interne non documentée du
+//   client et du site boutique Steam. Elle n'est couverte par aucune
+//   condition d'utilisation publiée par Valve — usage toléré en
+//   pratique par de nombreux projets tiers connus, mais sans garantie
+//   de stabilité ni de disponibilité (peut être limitée en débit,
+//   modifiée ou bloquée sans préavis). Usage ici strictement personnel,
+//   en lecture seule, à faible volume.
+//
+// SENSCRITIQUE — contrairement à TMDB et Steam, SensCritique ne publie
+// aucune API ni conditions d'utilisation développeur. Ce script appelle
+// leur API GraphQL interne (apollo.senscritique.com) avec la même clé
+// que leur propre frontend utilise pour la recherche anonyme (voir
+// findSensCritiqueApiKey() plus bas — détectée dynamiquement depuis le
+// code de la page plutôt que codée en dur, pour rester à jour si
+// SensCritique la fait tourner). Cet usage :
+// - reste en lecture seule (aucune donnée n'est modifiée sur leurs
+//   serveurs), strictement personnel et à faible volume ;
+// - sert uniquement à vérifier qu'une fiche n'existe pas déjà avant
+//   d'en préparer une nouvelle (usage cohérent avec l'objectif du site) ;
+// - ne se substitue jamais à la publication, qui reste 100% manuelle
+//   par l'utilisateur connecté via l'interface officielle du site ;
+// - peut néanmoins être considéré comme un accès non autorisé à une
+//   API interne au regard des CGU générales de SensCritique (non
+//   consultables publiquement au moment de la rédaction — leur
+//   robots.txt bloque l'accès automatisé, y compris pour simple
+//   lecture). En cas de doute, contacter SensCritique directement.
+// -------------------------------------------------------------------
+
 (function () {
   'use strict';
 
@@ -491,9 +538,39 @@
   };
 
   // Clé d'API publique utilisée par le frontend SensCritique pour les
-  // requêtes de recherche anonymes (visible dans les appels réseau du
-  // site, aucune donnée de compte utilisateur associée).
-  const SC_API_KEY = '05123ad69b3ced9810f04ee1aa1d6168';
+  // requêtes de recherche anonymes. Plutôt que de la coder en dur (elle
+  // peut changer à tout moment côté SensCritique et invalider le
+  // script), on la retrouve dynamiquement dans le code de la page
+  // elle-même à chaque utilisation — c'est exactement la même clé que
+  // le site utilise pour ses propres appels, donc si elle change, on la
+  // retrouve automatiquement sans mise à jour du script.
+  let cachedScKey = null;
+
+  function findSensCritiqueApiKey() {
+    if (cachedScKey) return cachedScKey;
+    const chunks = [];
+    try {
+      if (window.__NEXT_DATA__) chunks.push(JSON.stringify(window.__NEXT_DATA__));
+    } catch (e) { /* ignore */ }
+    document.querySelectorAll('script:not([src])').forEach((s) => chunks.push(s.textContent || ''));
+    document.querySelectorAll('meta[content]').forEach((m) => chunks.push(m.getAttribute('content') || ''));
+    const combined = chunks.join('\n');
+    // La clé observée fait 32 caractères hexadécimaux — motif générique
+    // suffisant pour la retrouver sans dépendre d'un nom de variable
+    // précis, qui pourrait changer avec le code du site.
+    const match = combined.match(/\b[0-9a-f]{32}\b/i);
+    if (match) {
+      cachedScKey = match[0];
+      return cachedScKey;
+    }
+    return null;
+  }
+
+  // Dernier recours si la détection dynamique échoue (page non encore
+  // chargée, structure changée...). Peut devenir invalide avec le temps
+  // puisque SensCritique peut faire tourner cette clé sans préavis — ne
+  // sert que de filet de sécurité, la détection dynamique est prioritaire.
+  const SC_API_KEY_FALLBACK = '05123ad69b3ced9810f04ee1aa1d6168';
 
   const SC_SEARCH_QUERY = `query SearchProductExplorer($query: String, $offset: Int, $limit: Int, $filters: [SearchFilter], $sortBy: SearchProductExplorerSort) {
   searchProductExplorer(query: $query, filters: $filters, sortBy: $sortBy, offset: $offset, limit: $limit) {
@@ -514,7 +591,8 @@
 
   // Vérifie si l'œuvre existe déjà sur SensCritique via l'API GraphQL
   // interne du site (recherche identique à celle du champ de recherche
-  // officiel, filtrée par type d'œuvre).
+  // officiel, filtrée par type d'œuvre). Retente une fois avec la clé
+  // de secours si la clé détectée dynamiquement est refusée (401/403).
   async function checkSensCritiqueExists(term, type) {
     const universe = SC_UNIVERSE_BY_TYPE[type] || 'game';
     const body = {
@@ -528,9 +606,20 @@
       },
       query: SC_SEARCH_QUERY,
     };
-    const res = await gmPostJson('https://apollo.senscritique.com/', body, {
-      authorization: SC_API_KEY,
-    });
+    const tryWithKey = (key) =>
+      gmPostJson('https://apollo.senscritique.com/', body, { authorization: key });
+
+    let key = findSensCritiqueApiKey() || SC_API_KEY_FALLBACK;
+    let res = await tryWithKey(key);
+    const unauthorized = res?.errors?.some((e) =>
+      /unauthorized|forbidden|401|403/i.test(e?.message || '')
+    );
+    if (unauthorized) {
+      cachedScKey = null; // force une nouvelle détection
+      key = findSensCritiqueApiKey() || SC_API_KEY_FALLBACK;
+      res = await tryWithKey(key);
+    }
+
     const items = res?.data?.searchProductExplorer?.items || [];
     return items.map((it) => ({
       href: it.url?.startsWith('http') ? it.url : `https://www.senscritique.com${it.url || ''}`,
@@ -854,6 +943,8 @@
     if (stickyBtn) stickyBtn.style.background = dark ? '#1e1e1e' : '#ffffff';
     const optionsPanel = panel.querySelector('#sc-options-panel');
     if (optionsPanel) optionsPanel.style.background = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+    const footer = panel.querySelector('#sc-footer');
+    if (footer) footer.style.color = dark ? '#888' : '#999';
   }
 
   // ---------------------------------------------------------------
@@ -1002,6 +1093,11 @@
         <div id="sc-data-list" style="display:none; margin-bottom:6px; max-height:33vh; overflow-y:auto;"></div>
         <div id="sc-autofill-log" style="font-size:11px; margin-top:6px;"></div>
         <div id="sc-autofill-hint" style="font-size:10px; margin-top:8px;">Ne publie/n'enregistre rien automatiquement — vérifie avant de valider.</div>
+      </div>
+      <div id="sc-footer" style="flex-shrink:0; margin-top:8px; padding-top:6px; border-top:1px solid rgba(128,128,128,0.25); font-size:9px; line-height:1.4; display:flex; align-items:center; gap:6px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 185.04 133.4" style="width:18px; height:auto; flex-shrink:0;" aria-label="TMDB logo"><defs><linearGradient id="sc-tmdb-grad" y1="66.7" x2="185.04" y2="66.7" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#90cea1"/><stop offset="0.56" stop-color="#3cbec9"/><stop offset="1" stop-color="#00b3e5"/></linearGradient></defs><path fill="url(#sc-tmdb-grad)" d="M51.06,66.7h0A17.67,17.67,0,0,1,68.73,49h-.1A17.67,17.67,0,0,1,86.3,66.7h0A17.67,17.67,0,0,1,68.63,84.37h.1A17.67,17.67,0,0,1,51.06,66.7Zm82.67-31.33h32.9A17.67,17.67,0,0,0,184.3,17.7h0A17.67,17.67,0,0,0,166.63,0h-32.9A17.67,17.67,0,0,0,116.06,17.7h0A17.67,17.67,0,0,0,133.73,35.37Zm-113,98h63.9A17.67,17.67,0,0,0,102.3,115.7h0A17.67,17.67,0,0,0,84.63,98H20.73A17.67,17.67,0,0,0,3.06,115.7h0A17.67,17.67,0,0,0,20.73,133.37Zm83.92-49h6.25L125.5,49h-8.35l-8.9,23.2h-.1L99.4,49H90.5Zm32.45,0h7.8V49h-7.8Zm22.2,0h24.95V77.2H167.1V70h15.35V62.8H167.1V56.2h16.25V49h-24ZM10.1,35.4h7.8V6.9H28V0H0V6.9H10.1ZM39,35.4h7.8V20.1H61.9V35.4h7.8V0H61.9V13.2H46.75V0H39Zm41.25,0h25V28.2H88V21h15.35V13.8H88V7.2h16.25V0h-24Zm-79,49H9V57.25h.1l9,27.15H24l9.3-27.15h.1V84.4h7.8V49H29.45l-8.2,23.1h-.1L13,49H1.2Zm112.09,49H126a24.59,24.59,0,0,0,7.56-1.15,19.52,19.52,0,0,0,6.35-3.37,16.37,16.37,0,0,0,4.37-5.5A16.91,16.91,0,0,0,146,115.8a18.5,18.5,0,0,0-1.68-8.25,15.1,15.1,0,0,0-4.52-5.53A18.55,18.55,0,0,0,133.07,99,33.54,33.54,0,0,0,125,98H113.29Zm7.81-28.2h4.6a17.43,17.43,0,0,1,4.67.62,11.68,11.68,0,0,1,3.88,1.88,9,9,0,0,1,2.62,3.18,9.87,9.87,0,0,1,1,4.52,11.92,11.92,0,0,1-1,5.08,8.69,8.69,0,0,1-2.67,3.34,10.87,10.87,0,0,1-4,1.83,21.57,21.57,0,0,1-5,.55H121.1Zm36.14,28.2h14.5a23.11,23.11,0,0,0,4.73-.5,13.38,13.38,0,0,0,4.27-1.65,9.42,9.42,0,0,0,3.1-3,8.52,8.52,0,0,0,1.2-4.68,9.16,9.16,0,0,0-.55-3.2,7.79,7.79,0,0,0-1.57-2.62,8.38,8.38,0,0,0-2.45-1.85,10,10,0,0,0-3.18-1v-.1a9.28,9.28,0,0,0,4.43-2.82,7.42,7.42,0,0,0,1.67-5,8.34,8.34,0,0,0-1.15-4.65,7.88,7.88,0,0,0-3-2.73,12.9,12.9,0,0,0-4.17-1.3,34.42,34.42,0,0,0-4.63-.32h-13.2Zm7.8-28.8h5.3a10.79,10.79,0,0,1,1.85.17,5.77,5.77,0,0,1,1.7.58,3.33,3.33,0,0,1,1.23,1.13,3.22,3.22,0,0,1,.47,1.82,3.63,3.63,0,0,1-.42,1.8,3.34,3.34,0,0,1-1.13,1.2,4.78,4.78,0,0,1-1.57.65,8.16,8.16,0,0,1-1.78.2H165Zm0,14.15h5.9a15.12,15.12,0,0,1,2.05.15,7.83,7.83,0,0,1,2,.55,4,4,0,0,1,1.58,1.17,3.13,3.13,0,0,1,.62,2,3.71,3.71,0,0,1-.47,1.95,4,4,0,0,1-1.23,1.3,4.78,4.78,0,0,1-1.67.7,8.91,8.91,0,0,1-1.83.2h-7Z"/></svg>
+        <span>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
+        <a href="https://www.themoviedb.org" target="_blank" style="color:inherit; text-decoration:underline;">themoviedb.org</a></span>
       </div>
     `;
 
