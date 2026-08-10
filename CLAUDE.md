@@ -12,7 +12,7 @@ There is no build system, package manager, or test suite — it's plain vanilla 
 
 Everything lives in `senscritique-wiki-autofill.user.js`, organized into numbered sections (see the comment banners):
 
-1. **`FIELD_MAPS`** — per work-type (`jeuvideo`, `film`, `serie`, `livre`, `bd`, `album`) mapping of logical field names to CSS selectors (`#scwiki-*`) on the SensCritique wiki form. **Only `jeuvideo` has been verified against the real form**; the other types are best-guess based on SensCritique's usual `scwiki-` naming convention and need checking against a live form before trusting them.
+1. **`FIELD_MAPS`** — per work-type (`jeuvideo`, `film`, `serie`, `livre`, `bd`) mapping of logical field names to CSS selectors (`#scwiki-*`) on the SensCritique wiki form. **Only `jeuvideo` has been verified against the real form**; the other types are best-guess based on SensCritique's usual `scwiki-` naming convention and need checking against a live form before trusting them.
 2. **`FICHES`** — the in-memory data object per type, populated by search providers and consumed by `fillForm`.
 3. **DOM utilities** — generic helpers for setting input values (via native setter + synthetic events, since React-controlled inputs ignore plain `.value =`), closing autocomplete dropdowns, and selecting `<option>`s by text.
    - Genres/plateformes are a special case: SensCritique renders them as several adjacent single `<select>` elements (not one `<select multiple>`). `findSiblingSlots` locates all sibling selects sharing the exact same option set as a reference select, and `fillGenreSlots` distributes values across them.
@@ -21,7 +21,7 @@ Everything lives in `senscritique-wiki-autofill.user.js`, organized into numbere
 5. **Search providers (`SEARCH_PROVIDERS`)** — per-type integration with an external metadata source, each exposing `search(term)` and `select(item)`:
    - `jeuvideo` → Steam store API (no key required)
    - `film` / `serie` → TMDB (requires a user-supplied API key, entered via the ⚙️ Options panel and stored in `localStorage`)
-   - `livre`, `bd`, `album` have no provider wired up yet (fillable manually only)
+   - `livre` / `bd` → Google Books API (works without a key using a shared anonymous quota; an optional personal key can be entered via the ⚙️ Options panel and stored in `localStorage` for a higher quota). Google Books doesn't distinguish author roles, so `bd` results split authors into scénariste/dessinateur heuristically and flag the result for manual review.
    - Before running a provider search, `checkSensCritiqueExists` queries SensCritique's own internal GraphQL API (`apollo.senscritique.com`) to warn if the work may already exist on the site.
 6. **Panel UI (`buildPanel`)** — builds the floating, draggable, minimizable, light/dark-themed panel and preview sidebar, and wires up all button/event handlers. State (theme, position, minimized, TMDB key) persists via `localStorage`.
 
@@ -34,3 +34,5 @@ Everything lives in `senscritique-wiki-autofill.user.js`, organized into numbere
 ### Network access
 
 All external requests use `GM_xmlhttpRequest` (via `gmGet`/`gmGetBlob`/`gmPostJson` wrappers) rather than `fetch`, since Tampermonkey's grant model requires it for cross-origin calls. Any new external host must be added to the `@connect` list in the userscript header or the request will be blocked.
+
+The userscript header also sets `@downloadURL`/`@updateURL` to the raw GitHub URL of `senscritique-wiki-autofill.user.js` on `main`, so Tampermonkey can auto-check for updates once installed; bump `@version` when shipping a change users should be prompted to update to.
