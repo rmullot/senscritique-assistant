@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         SensCritique Wiki Autofill
 // @namespace    senscritique-wiki-assistant
-// @version      2.0
+// @version      1.1
 // @description  Panneau flottant multi-types (thème clair/sombre) pour pré-remplir les fiches wiki SensCritique
+// @downloadURL  https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
+// @updateURL    https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
 // @match        https://*.senscritique.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      store.steampowered.com
@@ -12,6 +14,8 @@
 // @connect      apollo.senscritique.com
 // @connect      api.themoviedb.org
 // @connect      image.tmdb.org
+// @connect      www.googleapis.com
+// @connect      books.google.com
 // ==/UserScript==
 
 // -------------------------------------------------------------------
@@ -41,6 +45,12 @@
 //   modifiée ou bloquée sans préavis). Usage ici strictement personnel,
 //   en lecture seule, à faible volume.
 //
+// GOOGLE BOOKS (livre, BD) — API publique avec conditions d'utilisation
+// standard Google. Fonctionne sans clé (quota anonyme partagé limité,
+// d'où les clés optionnelles proposées dans le menu Options) ou avec
+// une clé personnelle gratuite (Google Cloud Console). Usage en lecture
+// seule, conforme à l'usage prévu de l'API.
+//
 // SENSCRITIQUE — contrairement à TMDB et Steam, SensCritique ne publie
 // aucune API ni conditions d'utilisation développeur. Ce script appelle
 // leur API GraphQL interne (apollo.senscritique.com) avec la même clé
@@ -67,28 +77,12 @@
   // ---------------------------------------------------------------
   // 1. Mapping des champs par type d'œuvre.
   //    IMPORTANT : seul le mapping "jeuvideo" a été vérifié sur le
-  //    formulaire réel. Les autres (film, livre, serie, album, bd)
+  //    formulaire réel. Les autres (film, livre, serie, bd)
   //    sont des estimations à partir des conventions habituelles de
   //    SensCritique (préfixes scwiki-) — ouvre une fiche de ce type
   //    et vérifie/ajuste les id via l'inspecteur si besoin.
   // ---------------------------------------------------------------
   const FIELD_MAPS = {
-    jeuvideo: {
-      label: 'Jeu vidéo',
-      categorie: '#scwiki-category',
-      titreOriginal: '#scwiki-originaltitle',
-      developpeurs: '#scwiki-developers',
-      editeurs: '#scwiki-publishers',
-      synopsis: '#scwiki-storyline',
-      genres: '#scwiki-genres',
-      plateformes: '#scwiki-gamesystems',
-      dateSortiePrefix: 'scwiki-releasedate',
-      dateSortieUSPrefix: 'scwiki-releasedateus',
-      dateSortieJPPrefix: 'scwiki-releasedatejp',
-      dateOriginePrefix: 'scwiki-originalreleasedate',
-      trailerVO: '#scwiki-trailervo',
-      trailerVF: '#scwiki-trailervf',
-    },
     film: {
       label: 'Film',
       titreOriginal: '#scwiki-originaltitle',
@@ -121,34 +115,52 @@
       trailerVO: '#scwiki-trailervo',
       trailerVF: '#scwiki-trailervf',
     },
-    livre: {
-      label: 'Livre',
+    jeuvideo: {
+      label: 'Jeu vidéo',
+      categorie: '#scwiki-category',
       titreOriginal: '#scwiki-originaltitle',
-      auteurs: '#scwiki-authors',
+      developpeurs: '#scwiki-developers',
       editeurs: '#scwiki-publishers',
       synopsis: '#scwiki-storyline',
       genres: '#scwiki-genres',
-      nbPages: '#scwiki-pages',
+      plateformes: '#scwiki-gamesystems',
       dateSortiePrefix: 'scwiki-releasedate',
+      dateSortieUSPrefix: 'scwiki-releasedateus',
+      dateSortieJPPrefix: 'scwiki-releasedatejp',
+      dateOriginePrefix: 'scwiki-originalreleasedate',
+      trailerVO: '#scwiki-trailervo',
+      trailerVF: '#scwiki-trailervf',
+    },
+    livre: {
+      label: 'Livre',
+      sousTitre: '#scwiki-subtitle',
+      titreOriginal: '#scwiki-originaltitle',
+      auteurs: '#scwiki-creators',
+      traducteurs: '#scwiki-translators',
+      editeurs: '#scwiki-publishers',
+      dessinateurs: '#scwiki-illustrators',
+      synopsis: '#scwiki-storyline',
+      genres: '#scwiki-genres',
+      langue: '#scwiki-language',
+      pays: '#scwiki-country',
+      isbn: '#scwiki-isbn',
+      dateSortiePrefix: 'scwiki-releasedate',
+      dateOriginePrefix: 'scwiki-originalreleasedate',
     },
     bd: {
       label: 'BD / Manga',
+      categorie: '#scwiki-category',
       titreOriginal: '#scwiki-originaltitle',
-      auteurs: '#scwiki-authors',
-      dessinateurs: '#scwiki-illustrators',
+      auteurs: '#scwiki-creators',
+      dessinateurs: '#scwiki-pencillers',
+      traducteurs: '#scwiki-translators',
       editeurs: '#scwiki-publishers',
       synopsis: '#scwiki-storyline',
-      genres: '#scwiki-genres',
+      langue: '#scwiki-language',
+      pays: '#scwiki-country',
+      isbn: '#scwiki-isbn',
       dateSortiePrefix: 'scwiki-releasedate',
-    },
-    album: {
-      label: 'Album musique',
-      titreOriginal: '#scwiki-originaltitle',
-      artistes: '#scwiki-artists',
-      label_musique: '#scwiki-label',
-      synopsis: '#scwiki-storyline',
-      genres: '#scwiki-genres',
-      dateSortiePrefix: 'scwiki-releasedate',
+      dateOriginePrefix: 'scwiki-originalreleasedate',
     },
   };
 
@@ -157,21 +169,6 @@
   //    bloc correspondant au type d'œuvre à créer.
   // ---------------------------------------------------------------
   const FICHES = {
-    jeuvideo: {
-      categorie: 'Jeu',
-      titreOriginal: '',
-      developpeurs: '',
-      editeurs: '',
-      synopsis: '',
-      genres: [],
-      plateformes: [],
-      dateSortie: null,
-      dateSortieUS: null,
-      dateSortieJP: null,
-      trailerVO: '',
-      trailerVF: '',
-      coverUrl: '',
-    },
     film: {},
     serie: {
       categorie: 'Série',
@@ -193,9 +190,51 @@
       trailerVF: '',
       coverUrl: '',
     },
-    livre: {},
-    bd: {},
-    album: {},
+    jeuvideo: {
+      categorie: 'Jeu',
+      titreOriginal: '',
+      developpeurs: '',
+      editeurs: '',
+      synopsis: '',
+      genres: [],
+      plateformes: [],
+      dateSortie: null,
+      dateSortieUS: null,
+      dateSortieJP: null,
+      trailerVO: '',
+      trailerVF: '',
+      coverUrl: '',
+    },
+    livre: {
+      sousTitre: '',
+      titreOriginal: '',
+      auteurs: '',
+      traducteurs: '',
+      editeurs: '',
+      dessinateurs: '',
+      synopsis: '',
+      genres: [],
+      langue: '',
+      pays: '',
+      isbn: '',
+      dateSortie: null,
+      coverUrl: '',
+    },
+    bd: {
+      categorie: 'BD',
+      titreOriginal: '',
+      auteurs: '',
+      dessinateurs: '',
+      traducteurs: '',
+      editeurs: '',
+      synopsis: '',
+      genres: [], // pas de champ correspondant sur ce formulaire, conservé pour "Voir les données"
+      langue: '',
+      pays: '',
+      isbn: '',
+      dateSortie: null,
+      coverUrl: '',
+    },
   };
 
   // ---------------------------------------------------------------
@@ -340,7 +379,7 @@
       if (!el) { missing.push(key); return; }
 
       const val = data[key];
-      const autocompleteFields = new Set(['developpeurs', 'editeurs', 'realisateurs', 'scenaristes', 'createurs', 'auteurs', 'dessinateurs', 'artistes', 'acteurs', 'producteurs']);
+      const autocompleteFields = new Set(['developpeurs', 'editeurs', 'realisateurs', 'scenaristes', 'createurs', 'auteurs', 'dessinateurs', 'artistes', 'acteurs', 'producteurs', 'traducteurs']);
       if (key === 'genres' || key === 'plateformes') {
         // Champs à slots multiples : gérés séparément ci-dessous.
         return;
@@ -447,11 +486,12 @@
   //    - jeuvideo : API publique Steam (aucune clé nécessaire)
   //    - serie / film : TMDB (nécessite une clé API gratuite, à saisir
   //      dans le menu ⚙️ Options du panneau)
-  //    Les autres types (livre, bd, album) n'ont pas encore de source
-  //    branchée.
+  //    - livre / bd : Google Books (fonctionne sans clé, clé optionnelle
+  //      pour un quota plus généreux)
   // ---------------------------------------------------------------
   let selectedSearchResult = null; // { type, id, label, coverUrl }
   let searchDone = false; // true dès qu'une recherche a été validée (résultat sélectionné)
+  let currentType = 'film'; // type actuellement sélectionné dans le panneau
 
   function updateButtonStates(panel) {
     const autofillBtn = panel.querySelector('#sc-autofill-btn');
@@ -469,14 +509,29 @@
     });
   }
 
-  function gmGet(url) {
+  function gmGet(url, headers) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
         url,
-        responseType: 'json',
-        onload: (res) => resolve(res.response),
-        onerror: reject,
+        headers: headers || {},
+        // On récupère le texte brut et on parse nous-mêmes en JSON plutôt
+        // que de compter sur responseType:'json' — ce mode auto n'est pas
+        // fiable sur toutes les combinaisons navigateur/Tampermonkey
+        // (notamment Firefox), selon l'en-tête Content-Type exact renvoyé
+        // par l'API appelée.
+        onload: (res) => {
+          if (res.status < 200 || res.status >= 300) {
+            reject(new Error(`HTTP ${res.status} sur ${url}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(res.responseText));
+          } catch (e) {
+            reject(new Error(`Réponse non-JSON depuis ${url}`));
+          }
+        },
+        onerror: (err) => reject(new Error(`Requête réseau échouée vers ${url}`)),
       });
     });
   }
@@ -500,9 +555,14 @@
         url,
         headers: { 'Content-Type': 'application/json', ...headers },
         data: JSON.stringify(body),
-        responseType: 'json',
-        onload: (res) => resolve(res.response),
-        onerror: reject,
+        onload: (res) => {
+          try {
+            resolve(JSON.parse(res.responseText));
+          } catch (e) {
+            reject(new Error(`Réponse non-JSON depuis ${url}`));
+          }
+        },
+        onerror: (err) => reject(new Error(`Requête réseau échouée vers ${url}`)),
       });
     });
   }
@@ -516,11 +576,74 @@
     localStorage.setItem(TMDB_KEY_STORAGE, (key || '').trim());
   }
 
+  // --- Clé API Google Books (optionnelle) ------------------------------
+  // Sans clé, l'API Google Books applique un quota anonyme partagé très
+  // restrictif (erreurs HTTP 429 fréquentes). Une clé gratuite (Google
+  // Cloud Console, API "Books API" activée, sans facturation nécessaire)
+  // donne un quota individuel bien plus généreux.
+  const GBOOKS_KEY_STORAGE = 'sc-autofill-gbooks-key';
+  function getGoogleBooksKey() {
+    return (localStorage.getItem(GBOOKS_KEY_STORAGE) || '').trim();
+  }
+  function setGoogleBooksKey(key) {
+    localStorage.setItem(GBOOKS_KEY_STORAGE, (key || '').trim());
+  }
+  function gbooksKeyParam() {
+    const key = getGoogleBooksKey();
+    return key ? `&key=${encodeURIComponent(key)}` : '';
+  }
+
   function isoToDMY(str) {
     if (!str) return null;
     const [y, m, d] = str.split('-');
     if (!y || !m || !d) return null;
     return { day: String(parseInt(d, 10)), month: String(parseInt(m, 10)), year: y };
+  }
+
+  // Google Books renvoie parfois des dates partielles ("2019", "2019-03").
+  // Complète les segments manquants par "1" (jour/mois par défaut).
+  function partialDateToDMY(str) {
+    if (!str) return null;
+    const [y, m, d] = str.split('-');
+    if (!y) return null;
+    return { day: d ? String(parseInt(d, 10)) : '1', month: m ? String(parseInt(m, 10)) : '1', year: y };
+  }
+
+  function stripHtml(str) {
+    if (!str) return '';
+    return str.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  // Certaines sources (TMDB pour les titres originaux japonais/coréens,
+  // Google Books pour des ouvrages étrangers…) peuvent renvoyer du texte
+  // dans un alphabet non-latin (kanji, hangul, cyrillique, arabe…), non
+  // adapté aux champs SensCritique. On détecte ces cas pour éviter de
+  // les insérer automatiquement.
+  const NON_LATIN_REGEX = /[\u0370-\u03FF\u0400-\u04FF\u0530-\u058F\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0900-\u097F\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+
+  function containsNonLatin(str) {
+    return typeof str === 'string' && NON_LATIN_REGEX.test(str);
+  }
+
+  // Retire d'une fiche tout champ (ou entrée de liste) contenant de
+  // l'alphabet non-latin, et renvoie la liste des champs concernés pour
+  // en informer l'utilisateur (à compléter manuellement dans ce cas).
+  function sanitizeLatinFiche(fiche) {
+    const skipped = [];
+    const clean = {};
+    Object.entries(fiche || {}).forEach(([key, value]) => {
+      if (typeof value === 'string' && containsNonLatin(value)) {
+        skipped.push(key);
+        clean[key] = '';
+      } else if (Array.isArray(value)) {
+        const filtered = value.filter((v) => !containsNonLatin(v));
+        if (filtered.length !== value.length) skipped.push(key);
+        clean[key] = filtered;
+      } else {
+        clean[key] = value;
+      }
+    });
+    return { clean, skipped };
   }
 
   function findYoutubeTrailer(videos) {
@@ -533,8 +656,7 @@
     film: 'movie',
     serie: 'tvshow',
     livre: 'book',
-    bd: 'comic',
-    album: 'album',
+    bd: 'comicBook',
   };
 
   // Clé d'API publique utilisée par le frontend SensCritique pour les
@@ -566,12 +688,6 @@
     return null;
   }
 
-  // Dernier recours si la détection dynamique échoue (page non encore
-  // chargée, structure changée...). Peut devenir invalide avec le temps
-  // puisque SensCritique peut faire tourner cette clé sans préavis — ne
-  // sert que de filet de sécurité, la détection dynamique est prioritaire.
-  const SC_API_KEY_FALLBACK = '05123ad69b3ced9810f04ee1aa1d6168';
-
   const SC_SEARCH_QUERY = `query SearchProductExplorer($query: String, $offset: Int, $limit: Int, $filters: [SearchFilter], $sortBy: SearchProductExplorerSort) {
   searchProductExplorer(query: $query, filters: $filters, sortBy: $sortBy, offset: $offset, limit: $limit) {
     total
@@ -591,9 +707,16 @@
 
   // Vérifie si l'œuvre existe déjà sur SensCritique via l'API GraphQL
   // interne du site (recherche identique à celle du champ de recherche
-  // officiel, filtrée par type d'œuvre). Retente une fois avec la clé
-  // de secours si la clé détectée dynamiquement est refusée (401/403).
+  // officiel, filtrée par type d'œuvre). La clé est retrouvée
+  // dynamiquement dans le code de la page (voir findSensCritiqueApiKey) ;
+  // si elle est introuvable ou refusée, on prévient clairement plutôt
+  // que d'échouer silencieusement.
   async function checkSensCritiqueExists(term, type) {
+    const key = findSensCritiqueApiKey();
+    if (!key) {
+      throw new Error("Impossible de se connecter à SensCritique : clé d'API introuvable sur cette page.");
+    }
+
     const universe = SC_UNIVERSE_BY_TYPE[type] || 'game';
     const body = {
       operationName: 'SearchProductExplorer',
@@ -606,18 +729,13 @@
       },
       query: SC_SEARCH_QUERY,
     };
-    const tryWithKey = (key) =>
-      gmPostJson('https://apollo.senscritique.com/', body, { authorization: key });
 
-    let key = findSensCritiqueApiKey() || SC_API_KEY_FALLBACK;
-    let res = await tryWithKey(key);
+    const res = await gmPostJson('https://apollo.senscritique.com/', body, { authorization: key });
     const unauthorized = res?.errors?.some((e) =>
       /unauthorized|forbidden|401|403/i.test(e?.message || '')
     );
     if (unauthorized) {
-      cachedScKey = null; // force une nouvelle détection
-      key = findSensCritiqueApiKey() || SC_API_KEY_FALLBACK;
-      res = await tryWithKey(key);
+      throw new Error('Impossible de se connecter à SensCritique : accès refusé (clé invalide ou expirée).');
     }
 
     const items = res?.data?.searchProductExplorer?.items || [];
@@ -731,6 +849,86 @@
         return { coverUrl, fallbackCover: coverUrl, fiche };
       },
     },
+    livre: {
+      requiresKey: false,
+      search: async (term) => {
+        const data = await gmGet(
+          `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(term)}&maxResults=8${gbooksKeyParam()}`
+        );
+        return (data?.items || []).map((it) => {
+          const v = it.volumeInfo || {};
+          return {
+            id: it.id,
+            label: `${v.title || '(sans titre)'}${v.publishedDate ? ' (' + v.publishedDate.slice(0, 4) + ')' : ''}${v.authors ? ' — ' + v.authors[0] : ''}`,
+            thumb: v.imageLinks?.thumbnail ? v.imageLinks.thumbnail.replace('http://', 'https://') : '',
+          };
+        });
+      },
+      select: async (item) => {
+        const data = await gmGet(`https://www.googleapis.com/books/v1/volumes/${item.id}?${gbooksKeyParam().replace('&', '')}`);
+        const v = data.volumeInfo || {};
+        const coverUrl = v.imageLinks?.thumbnail
+          ? v.imageLinks.thumbnail.replace('http://', 'https://').replace('zoom=1', 'zoom=2')
+          : '';
+        const isbn13 = (v.industryIdentifiers || []).find((i) => i.type === 'ISBN_13');
+        const isbn10 = (v.industryIdentifiers || []).find((i) => i.type === 'ISBN_10');
+        const fiche = {
+          sousTitre: v.subtitle || '',
+          auteurs: (v.authors || []).join(', '),
+          editeurs: v.publisher || '',
+          synopsis: stripHtml(v.description || ''),
+          genres: (v.categories || []).slice(0, 4),
+          isbn: (isbn13 || isbn10)?.identifier || '',
+          dateSortie: partialDateToDMY(v.publishedDate),
+          coverUrl,
+        };
+        return { coverUrl, fallbackCover: coverUrl, fiche };
+      },
+    },
+    bd: {
+      requiresKey: false,
+      // Google Books couvre raisonnablement la BD/manga en l'absence
+      // d'API dédiée gratuite et francophone (Comic Vine = comics US
+      // uniquement, MangaDex = manga uniquement, BDGest = pas d'API).
+      search: async (term) => {
+        const data = await gmGet(
+          `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(term)}&maxResults=8${gbooksKeyParam()}`
+        );
+        return (data?.items || []).map((it) => {
+          const v = it.volumeInfo || {};
+          return {
+            id: it.id,
+            label: `${v.title || '(sans titre)'}${v.publishedDate ? ' (' + v.publishedDate.slice(0, 4) + ')' : ''}${v.authors ? ' — ' + v.authors[0] : ''}`,
+            thumb: v.imageLinks?.thumbnail ? v.imageLinks.thumbnail.replace('http://', 'https://') : '',
+          };
+        });
+      },
+      select: async (item) => {
+        const data = await gmGet(`https://www.googleapis.com/books/v1/volumes/${item.id}?${gbooksKeyParam().replace('&', '')}`);
+        const v = data.volumeInfo || {};
+        const coverUrl = v.imageLinks?.thumbnail
+          ? v.imageLinks.thumbnail.replace('http://', 'https://').replace('zoom=1', 'zoom=2')
+          : '';
+        const isbn13 = (v.industryIdentifiers || []).find((i) => i.type === 'ISBN_13');
+        const isbn10 = (v.industryIdentifiers || []).find((i) => i.type === 'ISBN_10');
+        const fiche = {
+          auteurs: (v.authors || []).slice(0, 2).join(', '),
+          dessinateurs: (v.authors || []).slice(2).join(', '), // Google Books ne distingue pas scénariste/dessinateur
+          editeurs: v.publisher || '',
+          synopsis: stripHtml(v.description || ''),
+          genres: (v.categories || []).slice(0, 4),
+          isbn: (isbn13 || isbn10)?.identifier || '',
+          dateSortie: partialDateToDMY(v.publishedDate),
+          coverUrl,
+        };
+        return {
+          coverUrl,
+          fallbackCover: coverUrl,
+          fiche,
+          note: 'auteur(s)/dessinateur(s) à vérifier — Google Books ne distingue pas toujours les rôles',
+        };
+      },
+    },
   };
 
   async function searchWork(type, term) {
@@ -750,7 +948,7 @@
     try {
       scMatches = await checkSensCritiqueExists(term, type);
     } catch (e) {
-      log('Vérification SensCritique impossible, passage direct à la recherche.');
+      log(`${e?.message || 'Vérification SensCritique impossible.'} Passage direct à la recherche.`);
     }
 
     if (scMatches.length) {
@@ -795,7 +993,7 @@
       renderSearchResults(type, items);
       log(`${items.length} résultat(s).`);
     } catch (e) {
-      log('Erreur lors de la recherche — vérifie ta clé API si le type requiert TMDB.');
+      log(`Erreur lors de la recherche : ${e?.message || e}`);
     }
   }
 
@@ -812,7 +1010,7 @@
       row.style.cssText =
         'display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-radius:4px;';
       row.innerHTML = `
-        ${item.thumb ? `<img src="${item.thumb}" style="width:32px; height:44px; object-fit:cover; border-radius:2px;" />` : ''}
+        ${item.thumb ? `<img src="${item.thumb}" onerror="this.style.display='none'" style="width:32px; height:44px; object-fit:cover; border-radius:2px;" />` : ''}
         <span style="font-size:12px; flex:1;">${item.label}</span>
       `;
       row.addEventListener('mouseenter', () => (row.style.background = 'rgba(128,128,128,0.15)'));
@@ -826,6 +1024,7 @@
     const provider = SEARCH_PROVIDERS[type];
     selectedSearchResult = { type, id: item.id, label: item.label, coverUrl: item.thumb || '' };
     searchDone = true;
+    currentType = type;
     const mainPanel = document.getElementById('sc-autofill-panel');
     if (mainPanel) updateButtonStates(mainPanel);
 
@@ -837,18 +1036,30 @@
       const result = await provider.select(item);
       selectedSearchResult.coverUrl = result.coverUrl || item.thumb || '';
       if (preview && previewPanel) {
+        preview.style.display = 'block';
         preview.src = selectedSearchResult.coverUrl;
         preview.onerror = () => {
           preview.onerror = null;
-          preview.src = result.fallbackCover || item.thumb || '';
+          const fallback = result.fallbackCover || item.thumb || '';
+          if (fallback) {
+            preview.src = fallback;
+          } else {
+            preview.style.display = 'none';
+          }
         };
         previewPanel.style.display = 'block';
         previewPanel.dataset.hasContent = '1';
       }
-      Object.assign(FICHES[type], result.fiche);
-      log(`${item.label} : champs mis à jour${result.note ? ' (' + result.note + ')' : ''}. Clique "Remplir les champs".`);
+      const { clean, skipped } = sanitizeLatinFiche(result.fiche);
+      Object.assign(FICHES[type], clean);
+      const noteParts = [];
+      if (result.note) noteParts.push(result.note);
+      if (skipped.length) {
+        noteParts.push(`champs en alphabet non-latin ignorés (${skipped.join(', ')}) — à compléter manuellement`);
+      }
+      log(`${item.label} : champs mis à jour${noteParts.length ? ' (' + noteParts.join(' ; ') + ')' : ''}. Clique "Remplir les champs".`);
     } catch (e) {
-      log(`Sélectionné : ${item.label}. Erreur de récupération des détails — remplis le reste manuellement.`);
+      log(`Sélectionné : ${item.label}. Erreur de récupération des détails (${e?.message || e}) — remplis le reste manuellement.`);
     }
   }
 
@@ -957,13 +1168,12 @@
 
   function detectType() {
     const path = location.pathname.toLowerCase();
-    if (path.includes('jeuxvideo') || path.includes('jeuvideo')) return 'jeuvideo';
     if (path.includes('film')) return 'film';
     if (path.includes('serie')) return 'serie';
+    if (path.includes('jeuxvideo') || path.includes('jeuvideo')) return 'jeuvideo';
     if (path.includes('bd')) return 'bd';
     if (path.includes('livre')) return 'livre';
-    if (path.includes('album') || path.includes('musique')) return 'album';
-    return 'jeuvideo';
+    return 'film';
   }
 
   // La page courante est-elle bien un formulaire d'édition de fiche wiki ?
@@ -982,9 +1192,10 @@
     trailerVO: 'Bande-annonce VO', trailerVF: 'Bande-annonce VF', coverUrl: 'URL cover',
     realisateurs: 'Réalisateur(s)', scenaristes: 'Scénariste(s)', duree: 'Durée',
     createurs: 'Créateur(s)', nbSaisons: 'Nb de saisons', auteurs: 'Auteur(s)', nbPages: 'Nb de pages',
-    dessinateurs: 'Dessinateur(s)', artistes: 'Artiste(s)', label_musique: 'Label',
+    dessinateurs: 'Dessinateur(s)',
     dateSortieFR: 'Date de sortie France', acteurs: 'Acteur(s)', producteurs: 'Producteur(s)',
     chaineOrigine: 'Chaîne d\'origine', statutProduction: 'Statut de production', pays: 'Pays',
+    sousTitre: 'Sous-titre', traducteurs: 'Traducteur(s)', langue: 'Langue', isbn: 'ISBN',
   };
 
   function formatFieldValue(val) {
@@ -1071,6 +1282,16 @@
           Clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color:inherit;">themoviedb.org/settings/api</a> — mémorisée sur cet ordinateur uniquement.
         </div>
         <div id="sc-tmdb-key-status" style="font-size:10px; margin-top:4px;"></div>
+
+        <label for="sc-gbooks-key-input" style="font-size:11px; display:block; margin:10px 0 4px;">Clé API Google Books (optionnelle, pour livre / BD) :</label>
+        <div style="display:flex; gap:6px;">
+          <input id="sc-gbooks-key-input" type="text" placeholder="Clé API Google Books…" style="flex:1; padding:5px; font-size:12px;" />
+          <button id="sc-gbooks-key-save" style="padding:5px 8px; cursor:pointer;">Sauver</button>
+        </div>
+        <div style="font-size:10px; margin-top:4px; opacity:0.7;">
+          Fonctionne sans clé mais avec un quota très limité (erreurs 429 possibles). Clé gratuite sur <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:inherit;">console.cloud.google.com</a> (activer « Books API », créer une clé API).
+        </div>
+        <div id="sc-gbooks-key-status" style="font-size:10px; margin-top:4px;"></div>
       </div>
       <div id="sc-body" style="overflow-y:auto; min-height:0; flex:1 1 auto;">
         ${isWikiFormPage() ? '' : `
@@ -1114,6 +1335,12 @@
 
     const typeSelect = panel.querySelector('#sc-type-select');
     typeSelect.value = detectType();
+    currentType = typeSelect.value;
+
+    typeSelect.addEventListener('change', () => {
+      currentType = typeSelect.value;
+      updateButtonStates(panel);
+    });
 
     panel.querySelector('#sc-autofill-btn').addEventListener('click', () => fillForm(typeSelect.value));
     panel.querySelector('#sc-cover-btn').addEventListener('click', () => downloadCover(typeSelect.value));
@@ -1136,6 +1363,19 @@
       setTmdbKey(tmdbInput.value);
       refreshTmdbStatus();
       log('Clé API TMDB enregistrée.');
+    });
+
+    const gbooksInput = panel.querySelector('#sc-gbooks-key-input');
+    const gbooksStatus = panel.querySelector('#sc-gbooks-key-status');
+    gbooksInput.value = getGoogleBooksKey();
+    function refreshGbooksStatus() {
+      gbooksStatus.textContent = getGoogleBooksKey() ? '✓ Clé enregistrée' : 'Aucune clé (quota anonyme limité)';
+    }
+    refreshGbooksStatus();
+    panel.querySelector('#sc-gbooks-key-save').addEventListener('click', () => {
+      setGoogleBooksKey(gbooksInput.value);
+      refreshGbooksStatus();
+      log('Clé API Google Books enregistrée.');
     });
     panel.querySelector('#sc-search-btn').addEventListener('click', () =>
       searchWork(typeSelect.value, panel.querySelector('#sc-search-input').value)
