@@ -1,6 +1,12 @@
 # senscritique-assistant
 
-Script à utiliser via Tampermonkey dans votre navigateur pour simplifier le processus de création de fiches wiki sur SensCritique (recherche automatique sur Steam/TMDB, vérification préalable de doublon sur SensCritique, pré-remplissage des champs du formulaire, aperçu et upload de la jaquette).
+**senscritique-assistant** est un petit outil gratuit qui simplifie la création de fiches wiki sur [SensCritique](https://www.senscritique.com/) (jeux vidéo, films, séries, livres, BD).
+
+Concrètement, quand vous êtes sur le formulaire d'édition d'une fiche wiki SensCritique, un panneau flottant apparaît. Vous y tapez le nom de l'œuvre, l'outil va chercher les informations sur Steam, TMDB ou Google Books (selon le type d'œuvre), vous montre un aperçu (titre, résumé, date, genres, jaquette…), et si ça vous convient, pré-remplit automatiquement les champs du formulaire à votre place.
+
+**Il ne publie jamais rien tout seul** : c'est toujours vous qui relisez et cliquez sur le bouton de publication du formulaire SensCritique. L'outil ne fait que vous faire gagner le temps de recopie manuelle.
+
+Il se présente sous la forme d'un **script Tampermonkey** (aussi appelé « userscript ») : un petit programme qui s'installe dans votre navigateur et ne s'active que sur les pages de SensCritique. Si vous n'avez jamais utilisé Tampermonkey, pas d'inquiétude : ce document vous guide pas à pas, sans prérequis technique.
 
 ## Avertissement
 
@@ -19,23 +25,50 @@ Le script ne publie ni n'enregistre jamais rien automatiquement sur SensCritique
 - Bouton « Voir les données » : liste complète des champs avec copie individuelle, en secours si un champ ne se remplit pas automatiquement
 - Redirection vers le wiki si la page courante n'est pas un formulaire de fiche éditable
 
-## Installation
+---
 
-1. Installez l'extension Tampermonkey dans votre navigateur :
-   - [Chrome / Edge / Brave](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
-   - [Firefox](https://addons.mozilla.org/fr/firefox/addon/tampermonkey/)
-   - [Safari](https://apps.apple.com/app/tampermonkey/id1482490089)
-2. Ouvrez le tableau de bord Tampermonkey (icône de l'extension → « Tableau de bord »).
-3. Allez dans l'onglet **Scripts utilisateurs**, cliquez sur **+ Créer un script**.
-4. Supprimez le contenu par défaut et collez-y l'intégralité du contenu du fichier [`senscritique-wiki-autofill.user.js`](senscritique-wiki-autofill.user.js) de ce dépôt.
-5. Enregistrez (`Ctrl+S` / `Cmd+S`). Le script apparaît alors dans la liste, activé par défaut.
-6. Rendez-vous sur une page de fiche wiki SensCritique (`https://www.senscritique.com/...` ou `https://old.senscritique.com/wiki`) : un panneau flottant « Assistant fiche wiki » doit apparaître en haut à droite.
+## Tutoriel d'installation (pour débutants)
 
-Alternative : si votre installation de Tampermonkey détecte l'ajout automatique de scripts, vous pouvez aussi ouvrir le fichier `.user.js` directement dans votre navigateur (double-clic ou glisser-déposer dans un onglet) ; Tampermonkey proposera automatiquement de l'installer.
+Ce tutoriel ne suppose aucune connaissance technique. Il se déroule en trois étapes : installer Tampermonkey, installer le script, puis (si besoin) configurer une clé API gratuite pour Film/Série et éventuellement Livre/BD.
 
-## Configuration de la clé API TMDB (pour Film / Série)
+### Étape 1 — Qu'est-ce que Tampermonkey, et pourquoi en ai-je besoin ?
 
-> Pas besoin de connaissances techniques : ceci est un guide pas à pas, avec uniquement des clics sur des sites web.
+[Tampermonkey](https://www.tampermonkey.net/) est une extension de navigateur (gratuite, très populaire, utilisée par des millions de personnes) qui permet d'exécuter de petits scripts personnalisés sur certains sites web — un peu comme un plugin. Elle ne fait rien toute seule : elle sert simplement de « moteur » pour faire tourner des scripts que vous choisissez d'installer, comme celui de ce dépôt.
+
+Elle est disponible pour tous les navigateurs courants :
+
+- [Chrome / Edge / Brave](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+- [Firefox](https://addons.mozilla.org/fr/firefox/addon/tampermonkey/)
+- [Safari](https://apps.apple.com/app/tampermonkey/id1482490089)
+
+Cliquez sur le lien correspondant à votre navigateur, puis sur **Ajouter** (ou **Get**/**Installer**) pour l'ajouter à votre navigateur. Une icône Tampermonkey (un petit personnage noir et blanc) apparaît alors en haut à droite de votre navigateur, à côté de la barre d'adresse.
+
+### Étape 2 — Installer le script senscritique-assistant
+
+1. Cliquez sur l'icône Tampermonkey, puis sur **Tableau de bord** (« Dashboard »).
+2. Dans le tableau de bord, allez dans l'onglet **Scripts utilisateurs** (« Utilisateurs Scripts »).
+3. Cliquez sur le gros bouton **+ Créer un script** (« Create a new script »). Un éditeur de code s'ouvre, avec du code déjà présent par défaut.
+4. Sélectionnez tout ce code par défaut (`Ctrl+A` / `Cmd+A`) et supprimez-le.
+5. Ouvrez le fichier [`senscritique-wiki-autofill.user.js`](senscritique-wiki-autofill.user.js) de ce dépôt, copiez tout son contenu, et collez-le dans l'éditeur Tampermonkey à la place.
+6. Enregistrez avec `Ctrl+S` (Windows/Linux) ou `Cmd+S` (Mac). Une fenêtre de confirmation peut s'afficher : validez.
+7. Retournez dans l'onglet **Scripts utilisateurs** du tableau de bord : le script « Assistant fiche wiki SensCritique » doit y apparaître, avec un interrupteur activé (vert/bleu).
+
+> Astuce : si votre installation de Tampermonkey le permet, vous pouvez aussi simplement ouvrir le fichier `.user.js` directement dans un onglet du navigateur (double-clic sur le fichier téléchargé, ou glisser-déposer dans une fenêtre du navigateur) : Tampermonkey détecte le script et propose de l'installer automatiquement, ce qui remplace les étapes 3 à 6.
+
+### Étape 3 — Vérifier que ça marche
+
+Rendez-vous sur une page de fiche wiki SensCritique, par exemple en allant sur `https://www.senscritique.com/` puis en ouvrant l'édition d'une fiche existante (ou `https://old.senscritique.com/wiki`). Un panneau flottant intitulé **« Assistant fiche wiki »** doit apparaître en haut à droite de la page.
+
+- Si le panneau apparaît : bravo, l'installation est terminée. Vous pouvez passer à la configuration des clés API ci-dessous si vous comptez traiter des films, séries, livres ou BD.
+- Si rien n'apparaît : vérifiez que l'interrupteur du script est bien activé dans le tableau de bord Tampermonkey, et que vous êtes bien sur une URL `senscritique.com`. Un rafraîchissement de la page (`F5`) peut aussi être nécessaire juste après l'installation.
+
+---
+
+## Configuration des API
+
+Le script utilise des services externes pour rechercher les informations des œuvres. **Jeu vidéo ne nécessite aucune configuration** (l'API Steam utilisée ne demande pas de clé). Les autres types demandent une clé API personnelle, gratuite, à récupérer une seule fois.
+
+### Clé API TMDB (obligatoire pour Film / Série)
 
 La recherche pour les types « Film » et « Série TV » utilise l'API de [TMDB (The Movie Database)](https://www.themoviedb.org/), qui nécessite une clé API personnelle et gratuite (obtenue en quelques minutes).
 
@@ -58,9 +91,7 @@ C'est terminé : la recherche « Film » et « Série TV » fonctionne désormai
 
 La clé est mémorisée uniquement dans le `localStorage` de votre navigateur, sur votre ordinateur — elle n'est jamais envoyée à un tiers autre que l'API TMDB elle-même.
 
-La recherche pour « Jeu vidéo » (via l'API Steam) et la vérification de doublon sur SensCritique ne nécessitent aucune clé à saisir : la clé SensCritique est détectée automatiquement depuis la page elle-même (voir section conformité ci-dessous).
-
-## Configuration de la clé API Google Books (optionnelle, pour Livre / BD)
+### Clé API Google Books (optionnelle, pour Livre / BD)
 
 La recherche pour « Livre » et « BD » utilise l'[API Google Books](https://developers.google.com/books), qui fonctionne **sans clé** grâce à un quota anonyme partagé — **vous pouvez donc l'utiliser directement, sans rien configurer**.
 
@@ -83,6 +114,12 @@ Si vous rencontrez souvent un message d'erreur de type « quota dépassé » (ce
 Comme pour TMDB, cette manipulation n'est à faire qu'une seule fois : la clé est mémorisée uniquement dans le `localStorage` de votre navigateur, sur votre ordinateur, et n'est jamais envoyée à un tiers autre que l'API Google Books elle-même.
 
 Note : Google Books ne distingue pas toujours scénariste et dessinateur pour les BD/mangas ; le script répartit les auteurs de façon heuristique et signale le résultat comme à vérifier manuellement.
+
+### Et la clé SensCritique elle-même ?
+
+Aucune manipulation n'est nécessaire : la vérification de doublon sur SensCritique (avant de proposer une nouvelle fiche) est faite automatiquement, sans clé à saisir — elle est détectée directement depuis la page que vous consultez (voir la section conformité ci-dessous pour le détail).
+
+---
 
 ## Sources de données et conformité légale
 
