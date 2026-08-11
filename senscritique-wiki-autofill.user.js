@@ -85,13 +85,18 @@
   const FIELD_MAPS = {
     film: {
       label: 'Film',
+      categorie: '#scwiki-category',
       titreOriginal: '#scwiki-originaltitle',
-      realisateurs: '#scwiki-directors',
-      scenaristes: '#scwiki-writers',
+      realisateurs: '#scwiki-creators',
       synopsis: '#scwiki-storyline',
+      imdbId: '#scwiki-imdb-id',
       genres: '#scwiki-genres',
-      duree: '#scwiki-runtime',
+      pays: '#scwiki-country',
+      duree: '#scwiki-length',
+      budget: '#scwiki-budget',
+      akaTitles: '#scwiki-alsoknownas',
       dateSortiePrefix: 'scwiki-releasedate',
+      dateOriginePrefix: 'scwiki-originalreleasedate',
       trailerVO: '#scwiki-trailervo',
       trailerVF: '#scwiki-trailervf',
     },
@@ -169,7 +174,23 @@
   //    bloc correspondant au type d'œuvre à créer.
   // ---------------------------------------------------------------
   const FICHES = {
-    film: {},
+    film: {
+      categorie: 'Film',
+      titreOriginal: '',
+      realisateurs: '',
+      scenaristes: '',
+      synopsis: '',
+      imdbId: '',
+      genres: [],
+      pays: '',
+      duree: '',
+      budget: '',
+      akaTitles: '',
+      dateSortie: null,
+      trailerVO: '',
+      trailerVF: '',
+      coverUrl: '',
+    },
     serie: {
       categorie: 'Série',
       titreOriginal: '',
@@ -354,9 +375,23 @@
     if (!dayEl) return;
     const root = dayEl.name.split('[').slice(0, -1).join('[');
     setSelectByValueOrText(dayEl, String(parseInt(date.day, 10)));
-    const monthEl = dayEl.parentElement?.querySelector(`select[name^="${root}"][name*="month"]`);
+    // Le select mois et l'input année ne sont pas toujours dans le même
+    // parent direct que le select jour selon le formulaire ; on élargit
+    // la recherche à des ancêtres de plus en plus larges, puis au
+    // document entier en dernier recours (le préfixe de name est unique
+    // par groupe de date donc sans risque de collision).
+    const findSibling = (selector) => {
+      let scope = dayEl.parentElement;
+      while (scope) {
+        const found = scope.querySelector(selector);
+        if (found) return found;
+        scope = scope.parentElement;
+      }
+      return document.querySelector(selector);
+    };
+    const monthEl = findSibling(`select[name^="${root}"][name*="month"]`);
     if (monthEl) setSelectByValueOrText(monthEl, String(parseInt(date.month, 10)));
-    const yearEl = dayEl.parentElement?.querySelector(`input[name^="${root}"][name*="year"]`);
+    const yearEl = findSibling(`input[name^="${root}"][name*="year"]`);
     if (yearEl) setInputValue(yearEl, date.year);
   }
 
@@ -651,6 +686,24 @@
     return v ? `https://www.youtube.com/watch?v=${v.key}` : '';
   }
 
+  // TMDB ne renvoie les vidéos que dans la langue demandée en paramètre
+  // `language` (celle utilisée pour la fiche principale, ici fr-FR). Pour
+  // obtenir à la fois la VF et la VO, on refait un appel dédié à
+  // l'endpoint /videos dans la langue d'origine de l'œuvre (sauf si
+  // celle-ci est déjà le français).
+  async function fetchVoVfTrailers(kind, id, key, videosFR, originalLanguage) {
+    const trailerVF = findYoutubeTrailer(videosFR);
+    let trailerVO = '';
+    if (originalLanguage && originalLanguage !== 'fr') {
+      try {
+        const vo = await gmGet(`https://api.themoviedb.org/3/${kind}/${id}/videos?api_key=${key}&language=${originalLanguage}`);
+        trailerVO = findYoutubeTrailer(vo);
+      } catch (e) { /* pas grave, on retombe sur la VF */ }
+    }
+    if (!trailerVO) trailerVO = trailerVF;
+    return { trailerVO, trailerVF };
+  }
+
   const SC_UNIVERSE_BY_TYPE = {
     jeuvideo: 'game',
     film: 'movie',
@@ -797,6 +850,7 @@
           `https://api.themoviedb.org/3/tv/${item.id}?api_key=${key}&language=fr-FR&append_to_response=videos,credits`
         );
         const coverUrl = d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '';
+        const { trailerVO, trailerVF } = await fetchVoVfTrailers('tv', item.id, key, d.videos, d.original_language);
         const fiche = {
           titreOriginal: d.original_name && d.original_name !== d.name ? d.original_name : '',
           createurs: (d.created_by || []).map((c) => c.name).join(', '),
@@ -808,9 +862,10 @@
           chaineOrigine: d.networks?.[0]?.name || '',
           statutProduction: d.status || '',
           pays: (d.origin_country || [])[0] || '',
-          duree: d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min` : '',
+          duree: d.episode_run_time?.[0] ? String(d.episode_run_time[0]) : '',
           dateSortie: isoToDMY(d.first_air_date),
-          trailerVO: findYoutubeTrailer(d.videos),
+          trailerVO,
+          trailerVF,
           coverUrl,
         };
         return { coverUrl, fallbackCover: coverUrl, fiche };
@@ -835,15 +890,20 @@
           `https://api.themoviedb.org/3/movie/${item.id}?api_key=${key}&language=fr-FR&append_to_response=videos,credits`
         );
         const coverUrl = d.poster_path ? `https://image.tmdb.org/t/p/w780${d.poster_path}` : '';
+        const { trailerVO, trailerVF } = await fetchVoVfTrailers('movie', item.id, key, d.videos, d.original_language);
         const fiche = {
           titreOriginal: d.original_title && d.original_title !== d.title ? d.original_title : '',
           realisateurs: (d.credits?.crew || []).filter((c) => c.job === 'Director').map((c) => c.name).join(', '),
           scenaristes: (d.credits?.crew || []).filter((c) => c.job === 'Writer' || c.job === 'Screenplay').slice(0, 3).map((c) => c.name).join(', '),
           synopsis: d.overview || '',
+          imdbId: d.imdb_id || '',
           genres: (d.genres || []).map((g) => g.name).slice(0, 4),
-          duree: d.runtime ? `${d.runtime} min` : '',
+          pays: d.production_countries?.[0]?.name || '',
+          duree: d.runtime ? String(d.runtime) : '',
+          budget: d.budget ? String(d.budget) : '',
           dateSortie: isoToDMY(d.release_date),
-          trailerVO: findYoutubeTrailer(d.videos),
+          trailerVO,
+          trailerVF,
           coverUrl,
         };
         return { coverUrl, fallbackCover: coverUrl, fiche };
@@ -1196,6 +1256,7 @@
     dateSortieFR: 'Date de sortie France', acteurs: 'Acteur(s)', producteurs: 'Producteur(s)',
     chaineOrigine: 'Chaîne d\'origine', statutProduction: 'Statut de production', pays: 'Pays',
     sousTitre: 'Sous-titre', traducteurs: 'Traducteur(s)', langue: 'Langue', isbn: 'ISBN',
+    imdbId: 'ID IMDB', budget: 'Budget', akaTitles: 'Aussi connu sous',
   };
 
   function formatFieldValue(val) {
