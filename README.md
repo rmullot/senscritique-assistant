@@ -40,8 +40,13 @@ Elle est disponible pour tous les navigateurs courants :
 - [Chrome / Edge / Brave](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 - [Firefox](https://addons.mozilla.org/fr/firefox/addon/tampermonkey/)
 - [Safari](https://apps.apple.com/app/tampermonkey/id1482490089)
+- [Opera](https://addons.opera.com/fr/extensions/details/tampermonkey-beta/)
 
 Cliquez sur le lien correspondant à votre navigateur, puis sur **Ajouter** (ou **Get**/**Installer**) pour l'ajouter à votre navigateur. Une icône Tampermonkey (un petit personnage noir et blanc) apparaît alors en haut à droite de votre navigateur, à côté de la barre d'adresse.
+
+> **Utilisateurs d'Opera :** une étape supplémentaire est nécessaire. Ouvrez `opera://extensions`, repérez Tampermonkey, cliquez sur **Détails**, puis activez l'option **Autoriser les scripts utilisateurs**. Sans cela, Opera bloque l'exécution des scripts par Tampermonkey et le panneau n'apparaîtra jamais sur SensCritique.
+>
+> Les autres navigateurs à base de Chromium (Chrome, Edge, Brave) ont introduit une restriction similaire : si le script ne se charge pas, vérifiez que le **mode développeur** est activé sur la page des extensions (`chrome://extensions`, `edge://extensions`, etc.) — Tampermonkey en a besoin pour continuer à fonctionner correctement.
 
 ### Étape 2 — Installer le script senscritique-assistant
 
