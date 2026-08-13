@@ -1211,10 +1211,11 @@
     panel.style.background = dark ? '#1e1e1e' : '#ffffff';
     panel.style.color = dark ? '#eaeaea' : '#1a1a1a';
     panel.style.borderColor = dark ? '#3a3a3a' : '#ccc';
-    panel.querySelectorAll('button').forEach((b) => {
+    panel.querySelectorAll('button, #sc-github-star, #sc-github-issues').forEach((b) => {
       b.style.background = dark ? '#2c2c2c' : '#f5f5f5';
       b.style.color = dark ? '#eaeaea' : '#1a1a1a';
       b.style.border = `1px solid ${dark ? '#444' : '#ccc'}`;
+      b.style.borderRadius = '3px';
       b.style.opacity = b.disabled ? '0.45' : '1';
       b.style.cursor = b.disabled ? 'not-allowed' : 'pointer';
     });
@@ -1351,6 +1352,8 @@
       <div id="sc-drag-handle" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:move; flex-shrink:0;">
         <span style="font-weight:600;">⠿ Assistant fiche wiki</span>
         <div style="display:flex; gap:4px;">
+          <a id="sc-github-star" href="https://github.com/rmullot/senscritique-assistant" target="_blank" rel="noopener" title="Star le projet sur GitHub" style="padding:2px 8px; cursor:pointer; text-decoration:none; display:inline-block;">⭐</a>
+          <a id="sc-github-issues" href="https://github.com/rmullot/senscritique-assistant/issues" target="_blank" rel="noopener" title="Proposer une idée / signaler un problème" style="padding:2px 8px; cursor:pointer; text-decoration:none; display:inline-block;">💡</a>
           <button id="sc-options-toggle" title="Options" style="padding:2px 8px; cursor:pointer;">⚙️</button>
           <button id="sc-minimize-toggle" style="padding:2px 8px; cursor:pointer;">–</button>
         </div>
@@ -1514,7 +1517,7 @@
     }
     let dragging = false, offsetX = 0, offsetY = 0;
     dragHandle.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button')) return; // ne pas démarrer un drag depuis un bouton de l'en-tête
+      if (e.target.closest('button, a')) return; // ne pas démarrer un drag depuis un bouton/lien de l'en-tête
       dragging = true;
       const rect = wrapper.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
