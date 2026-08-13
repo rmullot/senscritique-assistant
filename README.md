@@ -16,14 +16,18 @@ Le script ne publie ni n'enregistre jamais rien automatiquement sur SensCritique
 
 ## Fonctionnalités
 
-- Panneau flottant, déplaçable, réductible, avec thème clair/sombre
+- Panneau flottant, déplaçable, réductible, dont le thème clair/sombre suit automatiquement celui du site (aucun réglage à faire)
+- Icône dédiée dans la barre du haut de SensCritique (à gauche de la cloche de notification) pour afficher/masquer le panneau à la demande ; masqué par défaut sur `senscritique.com`, visible d'entrée sur `old.senscritique.com`
 - Sélection du type d'œuvre (Jeu vidéo, Film, Série TV, Livre, BD)
 - Recherche par nom : vérifie d'abord si l'œuvre existe déjà sur SensCritique, puis interroge Steam (jeu vidéo), TMDB (film/série) ou Google Books (livre/BD)
+- Bouton « créer une fiche » ajouté directement dans le dropdown de recherche du site, entre les filtres et les résultats
 - Mise à jour automatique du script via Tampermonkey (le dépôt GitHub sert de source `@updateURL`)
 - Aperçu de la jaquette avec upload direct dans le champ fichier du formulaire, après validation manuelle
 - Pré-remplissage des champs texte, dates, genres et plateformes/genres à slots multiples
 - Bouton « Voir les données » : liste complète des champs avec copie individuelle, en secours si un champ ne se remplit pas automatiquement
 - Redirection vers le wiki si la page courante n'est pas un formulaire de fiche éditable
+- Empêche la fermeture intempestive de la popup « Ajouter à une liste » de SensCritique tant que vous n'avez pas cliqué sur Enregistrer ou la croix
+- Liens ⭐ (star le dépôt) et 💡 (idées/problèmes) dans l'en-tête du panneau, pour soutenir le projet ou remonter un retour
 
 ---
 
@@ -62,9 +66,9 @@ Cliquez sur le lien correspondant à votre navigateur, puis sur **Ajouter** (ou 
 
 ### Étape 3 — Vérifier que ça marche
 
-Rendez-vous sur une page de fiche wiki SensCritique, par exemple en allant sur `https://www.senscritique.com/` puis en ouvrant l'édition d'une fiche existante (ou `https://old.senscritique.com/wiki`). Un panneau flottant intitulé **« Assistant fiche wiki »** doit apparaître en haut à droite de la page.
+Rendez-vous sur une page de fiche wiki SensCritique, par exemple en allant sur `https://www.senscritique.com/` puis en ouvrant l'édition d'une fiche existante (ou `https://old.senscritique.com/wiki`). Une nouvelle icône doit apparaître dans la barre du haut du site, juste à gauche de la cloche de notification : cliquez dessus pour afficher le panneau flottant intitulé **« Assistant fiche wiki »** (masqué par défaut sur `senscritique.com` ; il apparaît directement sur `old.senscritique.com`).
 
-- Si le panneau apparaît : bravo, l'installation est terminée. Vous pouvez passer à la configuration des clés API ci-dessous si vous comptez traiter des films, séries, livres ou BD.
+- Si l'icône et le panneau apparaissent : bravo, l'installation est terminée. Vous pouvez passer à la configuration des clés API ci-dessous si vous comptez traiter des films, séries, livres ou BD.
 - Si rien n'apparaît : vérifiez que l'interrupteur du script est bien activé dans le tableau de bord Tampermonkey, et que vous êtes bien sur une URL `senscritique.com`. Un rafraîchissement de la page (`F5`) peut aussi être nécessaire juste après l'installation.
 
 ---
