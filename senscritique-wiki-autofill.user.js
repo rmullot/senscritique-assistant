@@ -1614,7 +1614,7 @@
   // recherche de la popup (data-testid="searchList") est en revanche
   // unique à la popup réellement ouverte : c'est un marqueur fiable.
   function findAddToListCloseButton() {
-    return document.querySelector('[data-testid="modal-cross"]');
+    return Array.from(document.querySelectorAll('[data-testid="modal-cross"]')).find(isVisible) || null;
   }
 
   // La popup a un en-tête (titre + croix), un corps (recherche + liste
@@ -1627,8 +1627,14 @@
   // ancêtre visible qui contient aussi le bouton croix : c'est le
   // conteneur qui englobe fiablement toute la popup.
   function findAddToListPopupRoot() {
-    const searchInput = document.querySelector('input[data-testid="searchList"]');
-    if (!searchInput || !isVisible(searchInput)) return null;
+    // Sur les pages listant plusieurs œuvres (ex. /top/resultats/...), un
+    // input[data-testid="searchList"] peut être présent en DOM pour
+    // chaque ligne (monté mais masqué tant que son popup n'est pas
+    // ouvert). Prendre le premier via querySelector ratait le vrai popup
+    // ouvert s'il n'était pas le premier du DOM : on cherche donc parmi
+    // TOUS les candidats celui qui est effectivement visible.
+    const searchInput = Array.from(document.querySelectorAll('input[data-testid="searchList"]')).find(isVisible);
+    if (!searchInput) return null;
     const closeBtn = findAddToListCloseButton();
     if (closeBtn) {
       let el = searchInput.parentElement;
@@ -1703,23 +1709,34 @@
       pointerEvents: 'none',
     });
 
+    // Les bandes ne servent qu'à l'assombrissement visuel : pointer-events
+    // reste à "none" pour ne jamais devenir la cible du hit-testing de la
+    // souris. Sur les pages listant plusieurs œuvres (ex. /top/resultats/...),
+    // la carte déclenche ses icônes d'action (dont "Ajouter à une liste")
+    // via un simple :hover CSS ; un voile visuellement au-dessus du curseur
+    // ferait perdre ce :hover dès que la souris quitte la carte en direction
+    // de la popup, refermant instantanément tout ce qui en dépend — d'où le
+    // blocage des clics via un listener document en phase de capture
+    // plutôt que via des éléments DOM qui intercepteraient aussi le survol.
     const bands = {
       top: document.createElement('div'),
       bottom: document.createElement('div'),
       left: document.createElement('div'),
       right: document.createElement('div'),
     };
+    Object.values(bands).forEach((band) => {
+      Object.assign(band.style, { position: 'fixed', background: bg, pointerEvents: 'none' });
+      wrapper.appendChild(band);
+    });
+
+    let currentRoot = popupRoot;
     const blockEvent = (e) => {
+      if (currentRoot && currentRoot.contains(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
     };
-    Object.values(bands).forEach((band) => {
-      Object.assign(band.style, { position: 'fixed', background: bg, pointerEvents: 'auto' });
-      ['mousedown', 'mouseup', 'click', 'contextmenu', 'pointerdown', 'pointerup', 'wheel'].forEach(
-        (type) => band.addEventListener(type, blockEvent, true)
-      );
-      wrapper.appendChild(band);
-    });
+    const blockedTypes = ['mousedown', 'mouseup', 'click', 'contextmenu', 'pointerdown', 'pointerup', 'wheel'];
+    blockedTypes.forEach((type) => document.addEventListener(type, blockEvent, true));
 
     // Le contenu de la popup (liste de résultats) peut grandir après le
     // montage initial (résultats chargés en async), et React peut même
@@ -1727,7 +1744,6 @@
     // re-cherche donc la racine actuelle à chaque repositionnement plutôt
     // que de se fier à la seule référence capturée à la création, et on
     // ré-observe si le nœud a changé.
-    let currentRoot = popupRoot;
     const reposition = () => {
       const freshRoot = findAddToListPopupRoot() || currentRoot;
       if (freshRoot !== currentRoot) {
@@ -1774,6 +1790,7 @@
       resizeObserver.disconnect();
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
+      blockedTypes.forEach((type) => document.removeEventListener(type, blockEvent, true));
     };
 
     document.body.appendChild(wrapper);
