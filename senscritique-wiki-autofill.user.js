@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SensCritique Wiki Autofill
 // @namespace    senscritique-wiki-assistant
-// @version      1.1
+// @version      1.2
 // @description  Panneau flottant multi-types (thème clair/sombre) pour pré-remplir les fiches wiki SensCritique
 // @downloadURL  https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
 // @updateURL    https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
@@ -1038,7 +1038,7 @@
     const continueBtn = document.createElement('button');
     continueBtn.id = 'sc-steam-continue-btn';
     continueBtn.textContent = 'Aucun ne correspond — chercher quand même';
-    continueBtn.style.cssText = 'width:100%; padding:6px; cursor:pointer; font-size:11px; position:sticky; bottom:0; margin-top:4px;';
+    continueBtn.style.cssText = 'width:100%; padding:6px; cursor:pointer; font-size:12px; font-weight:600; position:sticky; bottom:0; margin-top:4px;';
     continueBtn.addEventListener('click', onContinue);
     list.appendChild(continueBtn);
     refreshTheme();
@@ -1167,55 +1167,80 @@
   }
 
   // ---------------------------------------------------------------
-  // 5. Thème clair / sombre (persisté)
+  // 4bis. Affichage/masquage du panneau flottant (persisté, piloté par
+  //       une icône ajoutée dans la barre du haut du site)
   // ---------------------------------------------------------------
-  const THEME_KEY = 'sc-autofill-theme';
-  let currentTheme = null; // défini au build du panneau, mis à jour au toggle
+  const PANEL_VISIBLE_KEY = 'sc-autofill-panel-visible';
+  // Le panneau est masqué par défaut (affichable via l'icône dans la
+  // barre du haut), sauf sur old.senscritique.com où le comportement
+  // historique (panneau visible d'entrée) est conservé.
+  function isPanelVisible() {
+    const stored = localStorage.getItem(PANEL_VISIBLE_KEY);
+    if (stored !== null) return stored === '1';
+    return window.location.hostname === 'old.senscritique.com';
+  }
+  function setPanelVisible(visible) {
+    localStorage.setItem(PANEL_VISIBLE_KEY, visible ? '1' : '0');
+  }
+  function toggleAutofillPanel() {
+    const wrapper = document.getElementById('sc-autofill-wrapper');
+    if (!wrapper) return;
+    const nowVisible = wrapper.style.display === 'none';
+    wrapper.style.display = nowVisible ? 'flex' : 'none';
+    setPanelVisible(nowVisible);
+    updateTopBarToggleIcon(nowVisible);
+  }
+
+  // ---------------------------------------------------------------
+  // 5. Thème clair / sombre (aligné en permanence sur celui du site)
+  // ---------------------------------------------------------------
   function getTheme() {
-    return localStorage.getItem(THEME_KEY) ||
-      (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    return isSiteDarkTheme() ? 'dark' : 'light';
   }
   // Réapplique le thème courant à tous les panneaux existants — à
   // appeler après tout rendu dynamique (résultats, données, etc.).
   function refreshTheme() {
     const panel = document.getElementById('sc-autofill-panel');
     const previewPanel = document.getElementById('sc-preview-panel');
-    const theme = currentTheme || getTheme();
+    const theme = getTheme();
     if (panel) applyTheme(panel, theme);
     if (previewPanel) applyTheme(previewPanel, theme);
   }
   function applyTheme(panel, theme) {
     const dark = theme === 'dark';
     panel.style.background = dark ? '#1e1e1e' : '#ffffff';
-    panel.style.color = dark ? '#eaeaea' : '#1a1a1a';
+    panel.style.color = dark ? '#f5f5f5' : '#000000';
     panel.style.borderColor = dark ? '#3a3a3a' : '#ccc';
-    panel.querySelectorAll('button').forEach((b) => {
+    panel.querySelectorAll('button, #sc-github-star, #sc-github-issues').forEach((b) => {
       b.style.background = dark ? '#2c2c2c' : '#f5f5f5';
-      b.style.color = dark ? '#eaeaea' : '#1a1a1a';
+      b.style.color = dark ? '#f5f5f5' : '#000000';
       b.style.border = `1px solid ${dark ? '#444' : '#ccc'}`;
+      b.style.borderRadius = '3px';
       b.style.opacity = b.disabled ? '0.45' : '1';
       b.style.cursor = b.disabled ? 'not-allowed' : 'pointer';
+      b.style.fontWeight = '600';
     });
     panel.querySelectorAll('select, input[type="text"]').forEach((s) => {
       s.style.background = dark ? '#2c2c2c' : '#fff';
-      s.style.color = dark ? '#eaeaea' : '#1a1a1a';
+      s.style.color = dark ? '#f5f5f5' : '#000000';
       s.style.border = `1px solid ${dark ? '#444' : '#ccc'}`;
+      s.style.fontWeight = '500';
     });
     const log_ = panel.querySelector('#sc-autofill-log');
-    if (log_) log_.style.color = dark ? '#999' : '#666';
+    if (log_) log_.style.color = dark ? '#ccc' : '#333';
     const hint = panel.querySelector('#sc-autofill-hint');
-    if (hint) hint.style.color = dark ? '#888' : '#999';
+    if (hint) hint.style.color = dark ? '#bbb' : '#444';
     const noFormLink = panel.querySelector('#sc-no-form-notice a');
     if (noFormLink) {
-      noFormLink.style.color = dark ? '#ffffff' : '#1a1a1a';
-      noFormLink.style.borderColor = dark ? '#ffffff' : '#1a1a1a';
+      noFormLink.style.color = dark ? '#ffffff' : '#000000';
+      noFormLink.style.borderColor = dark ? '#ffffff' : '#000000';
     }
     const stickyBtn = panel.querySelector('#sc-steam-continue-btn');
     if (stickyBtn) stickyBtn.style.background = dark ? '#1e1e1e' : '#ffffff';
     const optionsPanel = panel.querySelector('#sc-options-panel');
     if (optionsPanel) optionsPanel.style.background = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
     const footer = panel.querySelector('#sc-footer');
-    if (footer) footer.style.color = dark ? '#888' : '#999';
+    if (footer) footer.style.color = dark ? '#bbb' : '#444';
   }
 
   // ---------------------------------------------------------------
@@ -1277,10 +1302,10 @@
       row.style.cssText = 'padding:6px 0; border-top:1px solid rgba(128,128,128,0.25); display:flex; justify-content:space-between; align-items:flex-start; gap:8px;';
       row.innerHTML = `
         <div style="flex:1; min-width:0;">
-          <div style="font-size:10px; opacity:0.7;">${label}</div>
+          <div style="font-size:11px;">${label}</div>
           <div style="font-size:12px; word-break:break-word;">${display}</div>
         </div>
-        <button data-copy="${encodeURIComponent(display)}" style="flex-shrink:0; padding:3px 6px; cursor:pointer; font-size:11px;">Copier</button>
+        <button data-copy="${encodeURIComponent(display)}" style="flex-shrink:0; padding:3px 6px; cursor:pointer; font-size:12px; font-weight:600;">Copier</button>
       `;
       container.appendChild(row);
     });
@@ -1301,13 +1326,14 @@
       position: fixed; top: 80px; right: 16px; z-index: 999999;
       display: flex; align-items: flex-start; gap: 8px;
     `;
+    wrapper.style.display = isPanelVisible() ? 'flex' : 'none';
 
     const panel = document.createElement('div');
     panel.id = 'sc-autofill-panel';
     panel.style.cssText = `
       width: 270px; border: 1px solid #ccc; border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: sans-serif; font-size: 13px;
-      padding: 12px; max-height: 90vh; display: flex; flex-direction: column;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: sans-serif; font-size: 14px;
+      font-weight: 500; padding: 12px; max-height: 90vh; display: flex; flex-direction: column;
       box-sizing: border-box;
     `;
 
@@ -1316,8 +1342,8 @@
     previewPanel.id = 'sc-preview-panel';
     previewPanel.style.cssText = `
       display: none; width: 200px; border: 1px solid #ccc; border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: sans-serif; font-size: 13px;
-      padding: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: sans-serif; font-size: 14px;
+      font-weight: 500; padding: 10px;
     `;
 
     const options = Object.entries(FIELD_MAPS)
@@ -1328,37 +1354,38 @@
       <div id="sc-drag-handle" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; cursor:move; flex-shrink:0;">
         <span style="font-weight:600;">⠿ Assistant fiche wiki</span>
         <div style="display:flex; gap:4px;">
+          <a id="sc-github-star" href="https://github.com/rmullot/senscritique-assistant" target="_blank" rel="noopener" title="Star le projet sur GitHub" style="padding:2px 8px; cursor:pointer; text-decoration:none; display:inline-block;">⭐</a>
+          <a id="sc-github-issues" href="https://github.com/rmullot/senscritique-assistant/issues" target="_blank" rel="noopener" title="Proposer une idée / signaler un problème" style="padding:2px 8px; cursor:pointer; text-decoration:none; display:inline-block;">💡</a>
           <button id="sc-options-toggle" title="Options" style="padding:2px 8px; cursor:pointer;">⚙️</button>
           <button id="sc-minimize-toggle" style="padding:2px 8px; cursor:pointer;">–</button>
-          <button id="sc-theme-toggle" style="padding:2px 8px; cursor:pointer;">🌓</button>
         </div>
       </div>
       <div id="sc-options-panel" style="display:none; flex-shrink:0; margin-bottom:8px; padding:8px; border-radius:6px; border:1px solid rgba(128,128,128,0.3);">
-        <label for="sc-tmdb-key-input" style="font-size:11px; display:block; margin-bottom:4px;">Clé API TMDB (pour film / série) :</label>
+        <label for="sc-tmdb-key-input" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Clé API TMDB (pour film / série) :</label>
         <div style="display:flex; gap:6px;">
           <input id="sc-tmdb-key-input" type="text" placeholder="Clé API TMDB…" style="flex:1; padding:5px; font-size:12px;" />
           <button id="sc-tmdb-key-save" style="padding:5px 8px; cursor:pointer;">Sauver</button>
         </div>
-        <div style="font-size:10px; margin-top:4px; opacity:0.7;">
-          Clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color:inherit;">themoviedb.org/settings/api</a> — mémorisée sur cet ordinateur uniquement.
+        <div style="font-size:11px; margin-top:4px;">
+          Clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color:#3cbec9; font-weight:600; text-decoration:underline;">themoviedb.org/settings/api</a> — mémorisée sur cet ordinateur uniquement.
         </div>
-        <div id="sc-tmdb-key-status" style="font-size:10px; margin-top:4px;"></div>
+        <div id="sc-tmdb-key-status" style="font-size:11px; margin-top:4px;"></div>
 
-        <label for="sc-gbooks-key-input" style="font-size:11px; display:block; margin:10px 0 4px;">Clé API Google Books (optionnelle, pour livre / BD) :</label>
+        <label for="sc-gbooks-key-input" style="font-size:12px; font-weight:600; display:block; margin:10px 0 4px;">Clé API Google Books (optionnelle, pour livre / BD) :</label>
         <div style="display:flex; gap:6px;">
           <input id="sc-gbooks-key-input" type="text" placeholder="Clé API Google Books…" style="flex:1; padding:5px; font-size:12px;" />
           <button id="sc-gbooks-key-save" style="padding:5px 8px; cursor:pointer;">Sauver</button>
         </div>
-        <div style="font-size:10px; margin-top:4px; opacity:0.7;">
-          Fonctionne sans clé mais avec un quota très limité (erreurs 429 possibles). Clé gratuite sur <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:inherit;">console.cloud.google.com</a> (activer « Books API », créer une clé API).
+        <div style="font-size:11px; margin-top:4px;">
+          Fonctionne sans clé mais avec un quota très limité (erreurs 429 possibles). Clé gratuite sur <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#3cbec9; font-weight:600; text-decoration:underline;">console.cloud.google.com/apis/credentials</a> (activer « Books API », créer une clé API).
         </div>
-        <div id="sc-gbooks-key-status" style="font-size:10px; margin-top:4px;"></div>
+        <div id="sc-gbooks-key-status" style="font-size:11px; margin-top:4px;"></div>
       </div>
       <div id="sc-body" style="overflow-y:auto; min-height:0; flex:1 1 auto;">
         ${isWikiFormPage() ? '' : `
         <div id="sc-no-form-notice" style="background:rgba(255,193,7,0.15); border:1px solid rgba(255,193,7,0.5); border-radius:6px; padding:8px; margin-bottom:8px; font-size:12px;">
           Cette page n'est pas une fiche wiki éditable.
-          <a href="https://old.senscritique.com/wiki" target="_blank" style="display:block; margin-top:6px; text-align:center; padding:5px; border:1px solid currentColor; border-radius:4px; text-decoration:none;">Aller créer/éditer une fiche →</a>
+          <a href="https://old.senscritique.com/wiki" target="_blank" style="display:block; margin-top:6px; text-align:center; padding:5px; border:1px solid currentColor; border-radius:4px; text-decoration:none;">créer une fiche</a>
         </div>`}
         <select id="sc-type-select" style="width:100%; padding:5px; margin-bottom:8px;">${options}</select>
 
@@ -1373,10 +1400,10 @@
         <button id="sc-cover-btn" style="width:100%; padding:6px; margin-bottom:6px; cursor:pointer;" disabled>Télécharger cover.jpg</button>
         <button id="sc-viewdata-btn" style="width:100%; padding:6px; margin-bottom:6px; cursor:pointer;" disabled>📋 Voir les données</button>
         <div id="sc-data-list" style="display:none; margin-bottom:6px; max-height:33vh; overflow-y:auto;"></div>
-        <div id="sc-autofill-log" style="font-size:11px; margin-top:6px;"></div>
-        <div id="sc-autofill-hint" style="font-size:10px; margin-top:8px;">Ne publie/n'enregistre rien automatiquement — vérifie avant de valider.</div>
+        <div id="sc-autofill-log" style="font-size:12px; font-weight:600; margin-top:6px;"></div>
+        <div id="sc-autofill-hint" style="font-size:11px; margin-top:8px;">Ne publie/n'enregistre rien automatiquement — vérifie avant de valider.</div>
       </div>
-      <div id="sc-footer" style="flex-shrink:0; margin-top:8px; padding-top:6px; border-top:1px solid rgba(128,128,128,0.25); font-size:9px; line-height:1.4; display:flex; align-items:center; gap:6px;">
+      <div id="sc-footer" style="flex-shrink:0; margin-top:8px; padding-top:6px; border-top:1px solid rgba(128,128,128,0.25); font-size:10px; line-height:1.4; display:flex; align-items:center; gap:6px;">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 185.04 133.4" style="width:18px; height:auto; flex-shrink:0;" aria-label="TMDB logo"><defs><linearGradient id="sc-tmdb-grad" y1="66.7" x2="185.04" y2="66.7" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#90cea1"/><stop offset="0.56" stop-color="#3cbec9"/><stop offset="1" stop-color="#00b3e5"/></linearGradient></defs><path fill="url(#sc-tmdb-grad)" d="M51.06,66.7h0A17.67,17.67,0,0,1,68.73,49h-.1A17.67,17.67,0,0,1,86.3,66.7h0A17.67,17.67,0,0,1,68.63,84.37h.1A17.67,17.67,0,0,1,51.06,66.7Zm82.67-31.33h32.9A17.67,17.67,0,0,0,184.3,17.7h0A17.67,17.67,0,0,0,166.63,0h-32.9A17.67,17.67,0,0,0,116.06,17.7h0A17.67,17.67,0,0,0,133.73,35.37Zm-113,98h63.9A17.67,17.67,0,0,0,102.3,115.7h0A17.67,17.67,0,0,0,84.63,98H20.73A17.67,17.67,0,0,0,3.06,115.7h0A17.67,17.67,0,0,0,20.73,133.37Zm83.92-49h6.25L125.5,49h-8.35l-8.9,23.2h-.1L99.4,49H90.5Zm32.45,0h7.8V49h-7.8Zm22.2,0h24.95V77.2H167.1V70h15.35V62.8H167.1V56.2h16.25V49h-24ZM10.1,35.4h7.8V6.9H28V0H0V6.9H10.1ZM39,35.4h7.8V20.1H61.9V35.4h7.8V0H61.9V13.2H46.75V0H39Zm41.25,0h25V28.2H88V21h15.35V13.8H88V7.2h16.25V0h-24Zm-79,49H9V57.25h.1l9,27.15H24l9.3-27.15h.1V84.4h7.8V49H29.45l-8.2,23.1h-.1L13,49H1.2Zm112.09,49H126a24.59,24.59,0,0,0,7.56-1.15,19.52,19.52,0,0,0,6.35-3.37,16.37,16.37,0,0,0,4.37-5.5A16.91,16.91,0,0,0,146,115.8a18.5,18.5,0,0,0-1.68-8.25,15.1,15.1,0,0,0-4.52-5.53A18.55,18.55,0,0,0,133.07,99,33.54,33.54,0,0,0,125,98H113.29Zm7.81-28.2h4.6a17.43,17.43,0,0,1,4.67.62,11.68,11.68,0,0,1,3.88,1.88,9,9,0,0,1,2.62,3.18,9.87,9.87,0,0,1,1,4.52,11.92,11.92,0,0,1-1,5.08,8.69,8.69,0,0,1-2.67,3.34,10.87,10.87,0,0,1-4,1.83,21.57,21.57,0,0,1-5,.55H121.1Zm36.14,28.2h14.5a23.11,23.11,0,0,0,4.73-.5,13.38,13.38,0,0,0,4.27-1.65,9.42,9.42,0,0,0,3.1-3,8.52,8.52,0,0,0,1.2-4.68,9.16,9.16,0,0,0-.55-3.2,7.79,7.79,0,0,0-1.57-2.62,8.38,8.38,0,0,0-2.45-1.85,10,10,0,0,0-3.18-1v-.1a9.28,9.28,0,0,0,4.43-2.82,7.42,7.42,0,0,0,1.67-5,8.34,8.34,0,0,0-1.15-4.65,7.88,7.88,0,0,0-3-2.73,12.9,12.9,0,0,0-4.17-1.3,34.42,34.42,0,0,0-4.63-.32h-13.2Zm7.8-28.8h5.3a10.79,10.79,0,0,1,1.85.17,5.77,5.77,0,0,1,1.7.58,3.33,3.33,0,0,1,1.23,1.13,3.22,3.22,0,0,1,.47,1.82,3.63,3.63,0,0,1-.42,1.8,3.34,3.34,0,0,1-1.13,1.2,4.78,4.78,0,0,1-1.57.65,8.16,8.16,0,0,1-1.78.2H165Zm0,14.15h5.9a15.12,15.12,0,0,1,2.05.15,7.83,7.83,0,0,1,2,.55,4,4,0,0,1,1.58,1.17,3.13,3.13,0,0,1,.62,2,3.71,3.71,0,0,1-.47,1.95,4,4,0,0,1-1.23,1.3,4.78,4.78,0,0,1-1.67.7,8.91,8.91,0,0,1-1.83.2h-7Z"/></svg>
         <span>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
         <a href="https://www.themoviedb.org" target="_blank" style="color:inherit; text-decoration:underline;">themoviedb.org</a></span>
@@ -1451,7 +1478,6 @@
     const viewDataBtn = panel.querySelector('#sc-viewdata-btn');
     let dataListOpen = false;
     let theme = getTheme();
-    currentTheme = theme;
     viewDataBtn.addEventListener('click', () => {
       dataListOpen = !dataListOpen;
       if (dataListOpen) { renderDataList(dataList, typeSelect.value); applyTheme(panel, theme); }
@@ -1493,7 +1519,7 @@
     }
     let dragging = false, offsetX = 0, offsetY = 0;
     dragHandle.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button')) return; // ne pas démarrer un drag depuis un bouton de l'en-tête
+      if (e.target.closest('button, a')) return; // ne pas démarrer un drag depuis un bouton/lien de l'en-tête
       dragging = true;
       const rect = wrapper.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
@@ -1524,18 +1550,421 @@
 
     applyTheme(panel, theme);
     applyTheme(previewPanel, theme);
-    panel.querySelector('#sc-theme-toggle').addEventListener('click', () => {
-      theme = theme === 'dark' ? 'light' : 'dark';
-      currentTheme = theme;
-      localStorage.setItem(THEME_KEY, theme);
+
+    // Suit en permanence les changements de thème clair/sombre du site.
+    let siteThemeSyncTimer = null;
+    const syncThemeFromSite = () => {
+      const site = isSiteDarkTheme() ? 'dark' : 'light';
+      if (site === theme) return;
+      theme = site;
       applyTheme(panel, theme);
       applyTheme(previewPanel, theme);
+    };
+    const siteThemeObserver = new MutationObserver(() => {
+      clearTimeout(siteThemeSyncTimer);
+      siteThemeSyncTimer = setTimeout(syncThemeFromSite, 100);
     });
+    siteThemeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-theme'],
+    });
+    siteThemeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    // La cloche (utilisée par isSiteDarkTheme pour se calibrer) peut
+    // n'être montée par React qu'après ce premier rendu : on surveille
+    // aussi l'apparition de contenu dans <body> pour rejouer la
+    // synchronisation une fois qu'elle existe, sans quoi le thème
+    // resterait figé sur la valeur de repli initiale.
+    siteThemeObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ---------------------------------------------------------------
+  // 7. Anti-fermeture de la popup "Ajouter à une liste"
+  //    Cette popup (survol jaquette → "Ajouter à une liste") se ferme
+  //    dès qu'on perd le focus/survol, ou qu'on clique en dehors,
+  //    avant même d'avoir cliqué sur "Enregistrer". Tenter d'intercepter
+  //    ces événements JS n'est pas fiable (le site peut les détecter à
+  //    plusieurs niveaux). À la place, on insère un voile (overlay)
+  //    semi-transparent, non cliquable, juste sous la popup : il
+  //    absorbe physiquement tout clic/survol destiné au reste de la
+  //    page, qui ne peut donc plus atteindre le détecteur "clic en
+  //    dehors" du site. Seul le bouton croix (×) ou "Enregistrer"
+  //    (tous deux au-dessus du voile, dans la popup) permettent de la
+  //    fermer.
+  // ---------------------------------------------------------------
+  // Un élément peut être présent dans le DOM (popup pré-montée mais
+  // cachée) sans être réellement affiché à l'écran : opacity à 0,
+  // display:none/visibility:hidden, ou simplement positionnée hors du
+  // viewport en attendant l'ouverture. On écarte tous ces cas.
+  function isVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= window.innerHeight || rect.left >= window.innerWidth) {
+      return false;
+    }
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (parseFloat(style.opacity) === 0) return false;
+    return true;
+  }
+
+  // Le bouton déclencheur "Ajouter à une liste" affiche en permanence un
+  // <p> avec ce même texte, donc on ne peut pas s'en servir seul comme
+  // marqueur (il matcherait dès le chargement de la page). L'input de
+  // recherche de la popup (data-testid="searchList") est en revanche
+  // unique à la popup réellement ouverte : c'est un marqueur fiable.
+  function findAddToListCloseButton() {
+    return document.querySelector('[data-testid="modal-cross"]');
+  }
+
+  // La popup a un en-tête (titre + croix), un corps (recherche + liste
+  // scrollable) et un pied (bouton "Enregistrer"). Se baser uniquement
+  // sur `closest('form')` ne remonte pas forcément jusqu'à englober tout
+  // ça (le pied peut être hors du <form>), ce qui produit un "trou"
+  // trop petit : le voile finit par recouvrir une partie de la popup
+  // elle-même tout en laissant du contenu de la page visible en dessous.
+  // On remonte donc depuis l'input de recherche jusqu'au premier
+  // ancêtre visible qui contient aussi le bouton croix : c'est le
+  // conteneur qui englobe fiablement toute la popup.
+  function findAddToListPopupRoot() {
+    const searchInput = document.querySelector('input[data-testid="searchList"]');
+    if (!searchInput || !isVisible(searchInput)) return null;
+    const closeBtn = findAddToListCloseButton();
+    if (closeBtn) {
+      let el = searchInput.parentElement;
+      while (el && el !== document.body) {
+        if (el.contains(closeBtn) && isVisible(el)) return el;
+        el = el.parentElement;
+      }
+    }
+    const root = searchInput.closest('form') || searchInput.closest('[data-testid="section"]')?.parentElement;
+    return root && isVisible(root) ? root : null;
+  }
+
+  // Devine si le site est actuellement en thème sombre ou clair, en
+  // regardant la couleur de fond réellement appliquée au <body>.
+  // Remonte depuis `el` (document.body par défaut) jusqu'au premier
+  // fond réellement opaque rencontré dans les ancêtres : le fond de
+  // <body> est souvent transparent sur ce site, ce qui ferait
+  // faussement conclure à un thème sombre si on s'y fiait seul.
+  function isBackgroundDark(el) {
+    let node = el || document.body;
+    while (node && node !== document.documentElement) {
+      const bg = window.getComputedStyle(node).backgroundColor;
+      const m = bg.match(/rgba?\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\s*\)/);
+      if (m) {
+        const alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
+        if (alpha > 0.05) {
+          const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+          return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+        }
+      }
+      node = node.parentElement;
+    }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  // Le fond de <body> est peu fiable (souvent transparent) pour détecter
+  // le thème du site. L'icône cloche de la barre du haut, elle, est
+  // toujours coloriée explicitement par le site selon son thème actuel
+  // (trait clair sur barre sombre, trait foncé sur barre claire) : on
+  // s'y calibre en priorité, et on ne retombe sur le fond que si elle
+  // est introuvable (site pas encore chargé, etc.).
+  function isSiteDarkTheme() {
+    const bellPath = document.querySelector('svg.bell path');
+    if (bellPath) {
+      const stroke = window.getComputedStyle(bellPath).stroke || bellPath.getAttribute('stroke') || '';
+      const m = stroke.match(/rgba?\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/);
+      if (m) {
+        const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.5; // trait clair = fond sombre
+      }
+    }
+    return isBackgroundDark(document.body);
+  }
+
+  // Overlay "à trou" : quatre bandes (haut/bas/gauche/droite) qui
+  // couvrent tout l'écran SAUF le rectangle exact de la popup, avec un
+  // z-index maximal. On évite ainsi de dépendre de l'ordre du DOM ou du
+  // z-index réel du site pour se placer "juste sous" la popup — ce qui
+  // s'est révélé peu fiable (le voile pouvait finir sous le fond
+  // assombri natif du site, qui recevait alors les clics à sa place).
+  function createAddToListShield(popupRoot) {
+    const dark = isSiteDarkTheme();
+    const bg = dark ? 'rgba(0, 0, 0, 0.55)' : 'rgba(20, 20, 20, 0.35)';
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'sc-addlist-shield';
+    Object.assign(wrapper.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '2147483647',
+      pointerEvents: 'none',
+    });
+
+    const bands = {
+      top: document.createElement('div'),
+      bottom: document.createElement('div'),
+      left: document.createElement('div'),
+      right: document.createElement('div'),
+    };
+    const blockEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    Object.values(bands).forEach((band) => {
+      Object.assign(band.style, { position: 'fixed', background: bg, pointerEvents: 'auto' });
+      ['mousedown', 'mouseup', 'click', 'contextmenu', 'pointerdown', 'pointerup', 'wheel'].forEach(
+        (type) => band.addEventListener(type, blockEvent, true)
+      );
+      wrapper.appendChild(band);
+    });
+
+    // Le contenu de la popup (liste de résultats) peut grandir après le
+    // montage initial (résultats chargés en async), et React peut même
+    // remplacer le nœud DOM observé par le ResizeObserver au passage. On
+    // re-cherche donc la racine actuelle à chaque repositionnement plutôt
+    // que de se fier à la seule référence capturée à la création, et on
+    // ré-observe si le nœud a changé.
+    let currentRoot = popupRoot;
+    const reposition = () => {
+      const freshRoot = findAddToListPopupRoot() || currentRoot;
+      if (freshRoot !== currentRoot) {
+        resizeObserver.disconnect();
+        resizeObserver.observe(freshRoot);
+        currentRoot = freshRoot;
+      }
+      const r = currentRoot.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const top = Math.max(r.top, 0);
+      const bottom = Math.max(r.bottom, 0);
+      const left = Math.max(r.left, 0);
+      const right = Math.max(r.right, 0);
+      Object.assign(bands.top.style, { top: '0px', left: '0px', width: vw + 'px', height: top + 'px' });
+      Object.assign(bands.bottom.style, {
+        top: bottom + 'px',
+        left: '0px',
+        width: vw + 'px',
+        height: Math.max(vh - bottom, 0) + 'px',
+      });
+      Object.assign(bands.left.style, {
+        top: top + 'px',
+        left: '0px',
+        width: left + 'px',
+        height: Math.max(bottom - top, 0) + 'px',
+      });
+      Object.assign(bands.right.style, {
+        top: top + 'px',
+        left: right + 'px',
+        width: Math.max(vw - right, 0) + 'px',
+        height: Math.max(bottom - top, 0) + 'px',
+      });
+    };
+    reposition();
+
+    const resizeObserver = new ResizeObserver(reposition);
+    resizeObserver.observe(popupRoot);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+
+    wrapper._scReposition = reposition;
+    wrapper._scDestroy = () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+
+    document.body.appendChild(wrapper);
+    console.debug('[senscritique-assistant] Popup "Ajouter à une liste" détectée, voile inséré');
+    return wrapper;
+  }
+
+  function initAddToListPopupProtection() {
+    let popupRoot = null;
+    let shield = null;
+    let rescanTimer = null;
+    const rescan = () => {
+      popupRoot = findAddToListPopupRoot();
+      if (popupRoot && !shield) {
+        shield = createAddToListShield(popupRoot);
+      } else if (!popupRoot && shield) {
+        console.debug('[senscritique-assistant] Popup "Ajouter à une liste" fermée, voile retiré');
+        if (shield._scDestroy) shield._scDestroy();
+        shield.remove();
+        shield = null;
+      } else if (popupRoot && shield && shield._scReposition) {
+        // La popup existe toujours : son contenu (liste de résultats) a
+        // pu grandir depuis le dernier passage, donc on recale le voile
+        // sur ses dimensions actuelles à chaque mutation détectée.
+        shield._scReposition();
+      }
+    };
+    const observer = new MutationObserver(() => {
+      clearTimeout(rescanTimer);
+      rescanTimer = setTimeout(rescan, 50);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    rescan();
+  }
+
+  // ---------------------------------------------------------------
+  // 8. Icône dans la barre du haut du site pour afficher/masquer le
+  //    panneau flottant. Insérée juste à gauche de l'icône de
+  //    notification (cloche) ; la barre est du contenu React qui peut
+  //    être re-rendu (perdant notre icône) donc on la réinsère à
+  //    chaque mutation détectée si besoin, comme pour la protection
+  //    de la popup "Ajouter à une liste".
+  // ---------------------------------------------------------------
+  function updateTopBarToggleIcon(visible) {
+    const btn = document.getElementById('sc-topbar-toggle');
+    if (btn) btn.style.opacity = visible ? '1' : '0.45';
+  }
+
+  // Plutôt que de figer un blanc (#FFFFFF) qui ne convient que sur une
+  // barre du haut sombre, on reprend la couleur de trait réellement
+  // utilisée par l'icône cloche voisine — elle reflète alors toujours
+  // le thème actuel de la barre, sans avoir à le deviner nous-mêmes.
+  function getBellStrokeColor() {
+    const bellPath = document.querySelector('svg.bell path');
+    if (!bellPath) return '#FFFFFF';
+    return window.getComputedStyle(bellPath).stroke || bellPath.getAttribute('stroke') || '#FFFFFF';
+  }
+
+  function syncTopBarToggleColor() {
+    const btn = document.getElementById('sc-topbar-toggle');
+    if (!btn) return;
+    const color = getBellStrokeColor();
+    btn.querySelectorAll('rect, line').forEach((el) => el.setAttribute('stroke', color));
+  }
+
+  function insertTopBarToggle() {
+    if (document.getElementById('sc-topbar-toggle')) {
+      syncTopBarToggleColor();
+      return;
+    }
+    const bellSvg = document.querySelector('svg.bell');
+    const bellWrapper = bellSvg && bellSvg.closest('div');
+    if (!bellWrapper || !bellWrapper.parentElement) return;
+
+    const color = getBellStrokeColor();
+    const btn = document.createElement('div');
+    btn.id = 'sc-topbar-toggle';
+    btn.className = bellWrapper.className;
+    btn.title = 'Afficher/masquer l\'assistant fiche wiki';
+    btn.style.cursor = 'pointer';
+    btn.style.opacity = isPanelVisible() ? '1' : '0.45';
+    btn.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3" y="4" width="18" height="16" rx="2" stroke="${color}" stroke-width="2"></rect>
+      <line x1="3" y1="9" x2="21" y2="9" stroke="${color}" stroke-width="2"></line>
+    </svg>`;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleAutofillPanel();
+    });
+
+    bellWrapper.parentElement.insertBefore(btn, bellWrapper);
+  }
+
+  function initTopBarToggle() {
+    let rescanTimer = null;
+    const rescan = () => insertTopBarToggle();
+    const observer = new MutationObserver(() => {
+      clearTimeout(rescanTimer);
+      rescanTimer = setTimeout(rescan, 50);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    rescan();
+  }
+
+  // ---------------------------------------------------------------
+  // 9. Bouton "créer une fiche" dans le dropdown de recherche du site
+  //    (barre de recherche du haut). Inséré entre le bloc "filtres" et
+  //    le bloc "Résultats" de `[data-testid="autocomplete-results"]`.
+  //    Les classes CSS générées (hash) de ce dropdown ne sont pas
+  //    stables d'un déploiement à l'autre : on ne s'appuie donc que
+  //    sur les `data-testid`, plus stables, pour se repérer.
+  // ---------------------------------------------------------------
+
+  function buildCreateFicheButton(root) {
+    const dark = isBackgroundDark(root);
+    const colors = dark
+      ? { text: '#F2F2F2', border: 'rgba(255,255,255,0.35)', bg: 'rgba(255,255,255,0.08)', bgHover: 'rgba(255,255,255,0.18)' }
+      : { text: '#000000', border: '#000000', bg: 'rgba(0,0,0,0.05)', bgHover: 'rgba(0,0,0,0.1)' };
+
+    const a = document.createElement('a');
+    a.id = 'sc-create-fiche-btn';
+    a.href = 'https://old.senscritique.com/wiki';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'créer une fiche';
+    Object.assign(a.style, {
+      display: 'block',
+      margin: '8px 12px',
+      padding: '8px 10px',
+      textAlign: 'center',
+      fontSize: '13px',
+      fontWeight: '600',
+      borderRadius: '6px',
+      border: `1px solid ${colors.border}`,
+      textDecoration: 'none',
+      color: colors.text,
+      background: colors.bg,
+      cursor: 'pointer',
+    });
+    a.addEventListener('mouseenter', () => { a.style.background = colors.bgHover; });
+    a.addEventListener('mouseleave', () => { a.style.background = colors.bg; });
+    return a;
+  }
+
+  function insertCreateFicheButton() {
+    const root = document.querySelector('[data-testid="autocomplete-results"]');
+    if (!root) return;
+
+    // Remonte du label "filtres" jusqu'à son enfant direct de `root`,
+    // pour ancrer notre bouton juste après ce bloc (au lieu de s'ancrer
+    // sur le bloc "Résultats", absent tant que React n'a pas fini de le
+    // rendre — ce qui pouvait faire retomber le bouton en tête, avant
+    // les filtres).
+    let filtersBlock = root.querySelector('[data-testid="autocomplete-label-filter"]');
+    while (filtersBlock && filtersBlock.parentElement !== root) {
+      filtersBlock = filtersBlock.parentElement;
+    }
+    if (!filtersBlock) return; // dropdown pas encore rendu
+
+    // React peut réordonner les enfants de `root` à chaque re-rendu (au
+    // fil de la frappe) sans tenir compte de notre nœud injecté, qui
+    // peut alors se retrouver déplacé. On revérifie donc sa position à
+    // chaque mutation détectée plutôt que de l'insérer une seule fois.
+    let btn = root.querySelector('#sc-create-fiche-btn');
+    if (!btn) btn = buildCreateFicheButton(root);
+    if (filtersBlock.nextSibling !== btn) {
+      root.insertBefore(btn, filtersBlock.nextSibling);
+    }
+  }
+
+  function initCreateFicheButton() {
+    let rescanTimer = null;
+    const rescan = () => insertCreateFicheButton();
+    const observer = new MutationObserver(() => {
+      clearTimeout(rescanTimer);
+      rescanTimer = setTimeout(rescan, 50);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    rescan();
   }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', buildPanel);
+    document.addEventListener('DOMContentLoaded', initAddToListPopupProtection);
+    document.addEventListener('DOMContentLoaded', initTopBarToggle);
+    document.addEventListener('DOMContentLoaded', initCreateFicheButton);
   } else {
     buildPanel();
+    initAddToListPopupProtection();
+    initTopBarToggle();
+    initCreateFicheButton();
   }
 })();
