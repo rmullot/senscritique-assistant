@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SensCritique Wiki Autofill
 // @namespace    senscritique-wiki-assistant
-// @version      1.2
+// @version      1.3
 // @description  Panneau flottant multi-types (thème clair/sombre) pour pré-remplir les fiches wiki SensCritique
 // @downloadURL  https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
 // @updateURL    https://raw.githubusercontent.com/rmullot/senscritique-assistant/main/senscritique-wiki-autofill.user.js
@@ -270,26 +270,157 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Certains champs (développeur, éditeur…) sont des champs
-  // autocomplétion : remplir la valeur déclenche une liste de
-  // suggestions qui reste ouverte. On force sa fermeture en simulant
-  // Échap + perte de focus, puis en masquant toute liste de
-  // suggestions encore visible juste après.
-  function setAutocompleteInput(el, value) {
-    if (!el || !value) return;
-    setInputValue(el, value);
-    const esc = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true };
-    el.dispatchEvent(new KeyboardEvent('keydown', esc));
-    el.dispatchEvent(new KeyboardEvent('keyup', esc));
-    el.blur();
-    setTimeout(() => {
-      const candidates = document.querySelectorAll(
-        '[class*="autocomplete" i], [class*="suggest" i], ul[role="listbox"], .ui-autocomplete'
-      );
-      candidates.forEach((node) => {
-        if (node.offsetParent !== null) node.style.display = 'none';
-      });
-    }, 50);
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Les champs de personnalités (acteurs, réalisateurs, scénaristes…)
+  // sont un widget jQuery UI autocomplete relié à la base de
+  // personnalités de SensCritique : chaque saisie ouvre une liste
+  // <ul class="ui-autocomplete"> de suggestions, et il faut cliquer
+  // l'une d'elles pour l'enregistrer (le simple fait de taper du texte
+  // libre n'associe rien). On retrouve cette liste via l'attribut
+  // aria-owns posé par le widget sur le champ pendant qu'il est ouvert.
+  function getAutocompleteList(el) {
+    const owns = el.getAttribute('aria-owns');
+    if (owns) {
+      const ul = document.getElementById(owns);
+      if (ul) return ul;
+    }
+    const lists = Array.from(document.querySelectorAll('ul.ui-autocomplete'));
+    return lists.reverse().find((ul) => ul.offsetParent !== null) || null;
+  }
+
+  // signature du contenu actuel d'une liste de suggestions, pour
+  // détecter qu'elle a bien été rafraîchie suite à une nouvelle
+  // recherche (et qu'on ne matche pas contre le résultat de la
+  // recherche précédente encore affiché).
+  function autocompleteListSignature(ul) {
+    if (!ul) return '';
+    return Array.from(ul.querySelectorAll('li')).map((li) => li.textContent).join('|');
+  }
+
+  async function waitForAutocompleteItems(el, previousSignature, timeoutMs = 3000) {
+    const start = Date.now();
+    let ul = null;
+    while (Date.now() - start < timeoutMs) {
+      ul = getAutocompleteList(el);
+      if (ul && ul.offsetParent !== null && ul.querySelectorAll('li.ui-menu-item').length) {
+        const sig = autocompleteListSignature(ul);
+        if (sig !== previousSignature) return ul;
+      }
+      await sleep(80);
+    }
+    return ul;
+  }
+
+  // Déclenche la recherche du widget jQuery UI autocomplete. Ce widget
+  // lie sa recherche à ses propres écouteurs internes (keydown), pas
+  // à un simple événement 'input' — modifier la valeur du champ ne
+  // suffit donc pas à relancer la recherche. On utilise sa méthode
+  // publique jQuery quand elle est disponible (fiable), sinon on
+  // simule une frappe clavier pour déclencher son minuteur interne.
+  function triggerAutocompleteSearch(el, term) {
+    const $ = window.jQuery || window.$;
+    if ($ && typeof $ === 'function') {
+      try {
+        const $el = $(el);
+        if ($el.data && ($el.data('ui-autocomplete') || $el.data('autocomplete'))) {
+          $el.autocomplete('search', term);
+          return true;
+        }
+      } catch (e) { /* on retombe sur la simulation clavier */ }
+    }
+    const opts = { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true };
+    el.dispatchEvent(new KeyboardEvent('keydown', opts));
+    el.dispatchEvent(new KeyboardEvent('keypress', opts));
+    el.dispatchEvent(new KeyboardEvent('keyup', opts));
+    return false;
+  }
+
+  // Choisit, parmi les suggestions, celle dont le nom correspond
+  // exactement à la saisie. En cas d'homonymes (ex. plusieurs "James
+  // Remar" : acteur, groupe de musique…), on préfère celle dont le
+  // texte mentionne l'œuvre en cours d'édition.
+  function normalizeText(s) {
+    return (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function findMatchingAutocompleteItem(ul, name, contextTitle) {
+    if (!ul || !name) return null;
+    const target = normalizeText(name);
+    const items = Array.from(ul.querySelectorAll('li.ui-menu-item')).filter((li) => li.querySelector('.d-heading5'));
+    const exact = items.filter((li) => normalizeText(li.querySelector('.d-heading5').textContent) === target);
+    if (exact.length <= 1) return exact[0] || null;
+    if (contextTitle) {
+      const withTitle = exact.find((li) => normalizeText(li.textContent).includes(normalizeText(contextTitle)));
+      if (withTitle) return withTitle;
+    }
+    return exact[0];
+  }
+
+  // Simule un vrai clic utilisateur sur la ligne de suggestion : la
+  // séquence complète (pointerdown/mousedown/mouseup/click), avec des
+  // coordonnées cohérentes avec la position réelle de l'élément, est
+  // nécessaire pour que le widget (jQuery UI Menu ou équivalent
+  // React) reconnaisse la sélection — un simple dispatch de 'click'
+  // sans détail suffisant n'est pas toujours pris en compte.
+  function simulateClick(el) {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const base = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
+    ['pointerover', 'pointerdown', 'mouseover', 'mouseenter', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((type) => {
+      const Ctor = type.startsWith('pointer') ? (window.PointerEvent || MouseEvent) : MouseEvent;
+      try {
+        el.dispatchEvent(new Ctor(type, base));
+      } catch (e) { /* certains types d'événements peuvent ne pas exister */ }
+    });
+  }
+
+  function clickAutocompleteItem(li) {
+    const link = li.querySelector('a.eiau-autocomplete-action') || li.querySelector('a');
+    const target = link || li;
+    simulateClick(li);
+    if (link && link !== li) simulateClick(link);
+    if (typeof target.click === 'function') target.click();
+    return true;
+  }
+
+  // Remplit un champ personnalité multi-valeurs (ex. "Jean Dupont,
+  // Marie Martin") en recherchant puis sélectionnant chaque nom un par
+  // un dans la liste d'autocomplétion, comme le ferait un utilisateur.
+  async function fillAutocompleteMulti(el, value, contextTitle) {
+    if (!el || !value) return { matched: [], unmatched: [] };
+    const names = (Array.isArray(value) ? value : String(value).split(','))
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const matched = [];
+    const unmatched = [];
+    for (const name of names) {
+      const previousSignature = autocompleteListSignature(getAutocompleteList(el));
+      setInputValue(el, name);
+      triggerAutocompleteSearch(el, name);
+      const ul = await waitForAutocompleteItems(el, previousSignature);
+      const li = findMatchingAutocompleteItem(ul, name, contextTitle);
+      if (li) {
+        clickAutocompleteItem(li);
+        matched.push(name);
+        await sleep(200);
+      } else {
+        unmatched.push(name);
+      }
+    }
+    // Si des noms n'ont pas trouvé de correspondance, on laisse le
+    // dernier tel quel dans le champ pour que l'utilisateur le
+    // sélectionne/complète manuellement ; sinon on vide le champ.
+    if (unmatched.length) {
+      setInputValue(el, unmatched[unmatched.length - 1]);
+    } else {
+      setInputValue(el, '');
+    }
+    return { matched, unmatched };
   }
 
   // Cas d'un vrai <select multiple> : sélectionne plusieurs options.
@@ -398,35 +529,39 @@
   // ---------------------------------------------------------------
   // 4. Remplissage générique piloté par le mapping du type choisi
   // ---------------------------------------------------------------
-  function fillForm(type) {
+  const AUTOCOMPLETE_FIELDS = new Set(['developpeurs', 'editeurs', 'realisateurs', 'scenaristes', 'createurs', 'auteurs', 'dessinateurs', 'artistes', 'acteurs', 'producteurs', 'traducteurs']);
+
+  async function fillForm(type) {
     const map = FIELD_MAPS[type];
     const data = FICHES[type];
     if (!map || !data) return;
 
     let filled = 0;
     let missing = [];
+    let unmatchedPersons = [];
+    const contextTitle = selectedSearchResult?.label || '';
 
-    Object.entries(map).forEach(([key, selector]) => {
-      if (key === 'label') return;
-      if (key.endsWith('Prefix')) return;
-      if (!(key in data)) return;
+    for (const [key, selector] of Object.entries(map)) {
+      if (key === 'label') continue;
+      if (key.endsWith('Prefix')) continue;
+      if (!(key in data)) continue;
       const el = document.querySelector(selector);
-      if (!el) { missing.push(key); return; }
+      if (!el) { missing.push(key); continue; }
 
       const val = data[key];
-      const autocompleteFields = new Set(['developpeurs', 'editeurs', 'realisateurs', 'scenaristes', 'createurs', 'auteurs', 'dessinateurs', 'artistes', 'acteurs', 'producteurs', 'traducteurs']);
       if (key === 'genres' || key === 'plateformes') {
         // Champs à slots multiples : gérés séparément ci-dessous.
-        return;
+        continue;
       } else if (el.tagName === 'SELECT') {
         setSelectByValueOrText(el, Array.isArray(val) ? val[0] : val);
-      } else if (autocompleteFields.has(key)) {
-        setAutocompleteInput(el, val);
+      } else if (AUTOCOMPLETE_FIELDS.has(key)) {
+        const { unmatched } = await fillAutocompleteMulti(el, val, contextTitle);
+        if (unmatched.length) unmatchedPersons.push(`${FIELD_LABELS[key] || key} (${unmatched.join(', ')})`);
       } else {
         setInputValue(el, val);
       }
       filled++;
-    });
+    }
 
     const genreEl = map.genres ? document.querySelector(map.genres) : null;
     if (genreEl && data.genres) {
@@ -470,9 +605,10 @@
       if (allDates.length) fillDate(map.dateOriginePrefix, allDates[0].d);
     }
 
-    log(missing.length
-      ? `${filled} champ(s) rempli(s). Non trouvés sur cette page : ${missing.join(', ')}.`
-      : `${filled} champ(s) rempli(s). Vérifie avant de publier.`);
+    const notes = [];
+    if (missing.length) notes.push(`non trouvés sur cette page : ${missing.join(', ')}`);
+    if (unmatchedPersons.length) notes.push(`personnalité(s) sans correspondance à sélectionner manuellement : ${unmatchedPersons.join(' ; ')}`);
+    log(`${filled} champ(s) rempli(s).${notes.length ? ' ' + notes.join(' — ') + '.' : ' Vérifie avant de publier.'}`);
   }
 
   function downloadCover(type) {
@@ -681,26 +817,30 @@
     return { clean, skipped };
   }
 
-  function findYoutubeTrailer(videos) {
-    const v = (videos?.results || []).find((x) => x.site === 'YouTube' && x.type === 'Trailer');
+  function findYoutubeTrailer(results, langs) {
+    const byLang = (type) => results.find((x) => x.site === 'YouTube' && x.type === type && langs.includes(x.iso_639_1));
+    const v = byLang('Trailer') || byLang('Teaser')
+      || results.find((x) => x.site === 'YouTube' && x.type === 'Trailer')
+      || results.find((x) => x.site === 'YouTube' && x.type === 'Teaser');
     return v ? `https://www.youtube.com/watch?v=${v.key}` : '';
   }
 
-  // TMDB ne renvoie les vidéos que dans la langue demandée en paramètre
-  // `language` (celle utilisée pour la fiche principale, ici fr-FR). Pour
-  // obtenir à la fois la VF et la VO, on refait un appel dédié à
-  // l'endpoint /videos dans la langue d'origine de l'œuvre (sauf si
-  // celle-ci est déjà le français).
+  // TMDB ne renvoie les vidéos correspondant qu'à la langue passée en
+  // paramètre `language` (celle utilisée pour la fiche principale, ici
+  // fr-FR), or la plupart des bandes-annonces ne sont pas taguées en
+  // fr-FR (elles le sont surtout en en/null) : d.videos est donc souvent
+  // vide. On refait un appel dédié à /videos avec `include_video_language`
+  // pour récupérer les vidéos de toutes les langues utiles en un seul
+  // appel, puis on filtre côté client par langue pour la VF et la VO.
   async function fetchVoVfTrailers(kind, id, key, videosFR, originalLanguage) {
-    const trailerVF = findYoutubeTrailer(videosFR);
-    let trailerVO = '';
-    if (originalLanguage && originalLanguage !== 'fr') {
-      try {
-        const vo = await gmGet(`https://api.themoviedb.org/3/${kind}/${id}/videos?api_key=${key}&language=${originalLanguage}`);
-        trailerVO = findYoutubeTrailer(vo);
-      } catch (e) { /* pas grave, on retombe sur la VF */ }
-    }
-    if (!trailerVO) trailerVO = trailerVF;
+    let results = videosFR?.results || [];
+    try {
+      const langs = ['fr', 'en', originalLanguage, 'null'].filter(Boolean).join(',');
+      const all = await gmGet(`https://api.themoviedb.org/3/${kind}/${id}/videos?api_key=${key}&include_video_language=${langs}`);
+      if (all?.results?.length) results = all.results;
+    } catch (e) { /* on retombe sur videosFR */ }
+    const trailerVF = findYoutubeTrailer(results, ['fr']);
+    const trailerVO = findYoutubeTrailer(results, originalLanguage ? [originalLanguage] : ['en']) || trailerVF;
     return { trailerVO, trailerVF };
   }
 
@@ -798,6 +938,44 @@
     }));
   }
 
+  const ISO_COUNTRY_FR = {
+    US: 'États-Unis', GB: 'Royaume-Uni', FR: 'France', DE: 'Allemagne', ES: 'Espagne',
+    IT: 'Italie', CA: 'Canada', JP: 'Japon', KR: 'Corée du Sud', CN: 'Chine',
+    BE: 'Belgique', CH: 'Suisse', NL: 'Pays-Bas', SE: 'Suède', NO: 'Norvège',
+    DK: 'Danemark', FI: 'Finlande', PL: 'Pologne', PT: 'Portugal', IE: 'Irlande',
+    AU: 'Australie', NZ: 'Nouvelle-Zélande', BR: 'Brésil', MX: 'Mexique', AR: 'Argentine',
+    IN: 'Inde', RU: 'Russie', AT: 'Autriche', GR: 'Grèce', TR: 'Turquie',
+    IL: 'Israël', ZA: 'Afrique du Sud', HK: 'Hong Kong', TW: 'Taïwan', TH: 'Thaïlande',
+    IS: 'Islande', LU: 'Luxembourg', CZ: 'République tchèque', HU: 'Hongrie', RO: 'Roumanie',
+  };
+
+  // TMDB regroupe certains genres sous un seul intitulé combiné (ex.
+  // "Science-Fiction & Fantastique", "Action & Aventure"), alors que
+  // SensCritique attend chaque genre séparément dans son propre slot.
+  function expandGenres(names) {
+    return (names || []).flatMap((n) => n.split('&').map((s) => s.trim())).filter(Boolean);
+  }
+
+  function averageEpisodeRuntime(runtimes) {
+    const valid = (runtimes || []).filter((n) => Number.isFinite(n) && n > 0);
+    if (!valid.length) return '';
+    return String(Math.round(valid.reduce((sum, n) => sum + n, 0) / valid.length));
+  }
+
+  function mapTmdbCountry(code) {
+    if (!code) return '';
+    return ISO_COUNTRY_FR[code] || code;
+  }
+
+  function mapTmdbStatus(status) {
+    const s = (status || '').trim().toLowerCase();
+    if (['ended', 'terminée', 'terminee'].includes(s)) return 'Terminée';
+    if (['canceled', 'cancelled', 'annulée', 'annulee'].includes(s)) return 'Arrêtée';
+    if (['returning series', 'in production', 'planned', 'pilot',
+         'en cours de diffusion', 'en production', 'prévue', 'prevue', 'pilote'].includes(s)) return 'En cours';
+    return status || '';
+  }
+
   // --- Fournisseurs de recherche par type d'œuvre --------------------
   const SEARCH_PROVIDERS = {
     jeuvideo: {
@@ -855,14 +1033,14 @@
           titreOriginal: d.original_name && d.original_name !== d.name ? d.original_name : '',
           createurs: (d.created_by || []).map((c) => c.name).join(', '),
           synopsis: d.overview || '',
-          genres: (d.genres || []).map((g) => g.name).slice(0, 4),
+          genres: expandGenres((d.genres || []).map((g) => g.name)).slice(0, 4),
           nbSaisons: d.number_of_seasons ? String(d.number_of_seasons) : '',
           acteurs: (d.credits?.cast || []).slice(0, 5).map((c) => c.name).join(', '),
           producteurs: (d.credits?.crew || []).filter((c) => c.job === 'Executive Producer').slice(0, 3).map((c) => c.name).join(', '),
           chaineOrigine: d.networks?.[0]?.name || '',
-          statutProduction: d.status || '',
-          pays: (d.origin_country || [])[0] || '',
-          duree: d.episode_run_time?.[0] ? String(d.episode_run_time[0]) : '',
+          statutProduction: mapTmdbStatus(d.status),
+          pays: mapTmdbCountry((d.origin_country || [])[0]),
+          duree: averageEpisodeRuntime(d.episode_run_time),
           dateSortie: isoToDMY(d.first_air_date),
           trailerVO,
           trailerVF,
@@ -897,7 +1075,7 @@
           scenaristes: (d.credits?.crew || []).filter((c) => c.job === 'Writer' || c.job === 'Screenplay').slice(0, 3).map((c) => c.name).join(', '),
           synopsis: d.overview || '',
           imdbId: d.imdb_id || '',
-          genres: (d.genres || []).map((g) => g.name).slice(0, 4),
+          genres: expandGenres((d.genres || []).map((g) => g.name)).slice(0, 4),
           pays: d.production_countries?.[0]?.name || '',
           duree: d.runtime ? String(d.runtime) : '',
           budget: d.budget ? String(d.budget) : '',
@@ -1430,7 +1608,15 @@
       updateButtonStates(panel);
     });
 
-    panel.querySelector('#sc-autofill-btn').addEventListener('click', () => fillForm(typeSelect.value));
+    panel.querySelector('#sc-autofill-btn').addEventListener('click', async () => {
+      const btn = panel.querySelector('#sc-autofill-btn');
+      btn.disabled = true;
+      try {
+        await fillForm(typeSelect.value);
+      } finally {
+        btn.disabled = false;
+      }
+    });
     panel.querySelector('#sc-cover-btn').addEventListener('click', () => downloadCover(typeSelect.value));
 
     // Menu Options : saisie et mémorisation de la clé API TMDB
